@@ -1,0 +1,10 @@
+# Build artifacts
+*.o
+*.d
+kumu
+
+# Personal Claude Code settings (settings.json, if added, stays tracked)
+.claude/settings.local.json
+
+# Remember plugin session history - local tooling state, not project source
+.remember/

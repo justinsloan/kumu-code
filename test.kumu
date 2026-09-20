@@ -1,0 +1,178 @@
+PRINT "=== Variables and Arithmetic ==="
+VAR a = 10
+VAR b = 3
+PRINT a + b
+PRINT a - b
+PRINT a * b
+PRINT a / b
+
+PRINT "=== Bare Assignment (no VAR) ==="
+a = 99
+PRINT a
+
+PRINT "=== String Concatenation ==="
+VAR name = "World"
+PRINT "Hello, " + name
+PRINT "Value of a is: " + a
+
+PRINT "=== Comparison Operators (1 = true, 0 = false) ==="
+PRINT 5 == 5
+PRINT 5 != 5
+PRINT 5 < 10
+PRINT 5 > 10
+PRINT 5 <= 5
+PRINT 5 >= 6
+PRINT "abc" == "abc"
+PRINT "abc" != "xyz"
+
+PRINT "=== Unary Operators ==="
+VAR neg = -a
+PRINT neg
+PRINT -(-5)
+PRINT !0
+PRINT !1
+
+PRINT "=== IF / ELSE ==="
+VAR score = 85
+IF score >= 60 {
+    PRINT "Pass"
+} ELSE {
+    PRINT "Fail"
+}
+
+PRINT "=== IF / ELSE (a second condition) ==="
+IF score >= 90 {
+    PRINT "A grade"
+} ELSE {
+    PRINT "Not an A"
+}
+
+PRINT "=== IF / ELSEIF / ELSE (multi-way) ==="
+IF score >= 90 {
+    PRINT "A"
+} ELSEIF score >= 80 {
+    PRINT "B"
+} ELSEIF score >= 70 {
+    PRINT "C"
+} ELSE {
+    PRINT "F"
+}
+
+PRINT "=== WHILE loop ==="
+VAR i = 0
+WHILE i < 5 {
+    PRINT i
+    i = i + 1
+}
+
+PRINT "=== FOR loop ==="
+FOR j = 1 TO 5 {
+    PRINT j
+}
+
+PRINT "=== FUNCTION, RETURN, and calls (including recursion) ==="
+FUNCTION add(x, y) {
+    RETURN x + y
+}
+
+FUNCTION factorial(n) {
+    IF n <= 1 {
+        RETURN 1
+    } ELSE {
+        RETURN n * factorial(n - 1)
+    }
+}
+
+PRINT add(4, 7)
+PRINT factorial(5)
+
+PRINT "=== File I/O: WRITE_FILE / READ_FILE ==="
+WRITE_FILE("test_output.txt", "Hello from Kumu!")
+VAR fileContent = READ_FILE("test_output.txt")
+PRINT fileContent
+
+PRINT "=== Matrix: literals, GET/SET, ROWS/COLS ==="
+VAR data = (
+    ("Name", "Score"),
+    ("Alice", "95"),
+    ("Bob", "88"),
+    ("Carol", "72")
+)
+PRINT data
+PRINT data.ROWS()
+PRINT data.COLS()
+PRINT data.GET(1, "Name")
+PRINT data.GET(2, 2)
+VAR updated = data.SET(1, "Score", "100")
+PRINT updated.GET(1, "Score")
+PRINT data.GET(1, "Score")
+
+PRINT "=== Matrix: APPEND_ROW / DELETE_ROW ==="
+VAR withDavid = data.APPEND_ROW("David", "60")
+PRINT withDavid.ROWS()
+VAR withoutAlice = withDavid.DELETE_ROW(1)
+PRINT withoutAlice
+
+PRINT "=== Matrix: SUM / AVERAGE / MIN / MAX / COUNT ==="
+PRINT data.SUM("Score")
+PRINT data.AVERAGE("Score")
+PRINT data.MIN("Score")
+PRINT data.MAX("Score")
+PRINT data.COUNT("Score")
+
+VAR messyPrices = (
+    ("Item", "Price"),
+    ("Widget", "9.99"),
+    ("Gadget", "N/A"),
+    ("Gizmo", ""),
+    ("Thing", "15.50")
+)
+PRINT messyPrices.COUNT("Price")   # only the two real numbers count, N/A and blank are skipped
+
+PRINT "=== Matrix: FIND / SORT ==="
+PRINT data.FIND("Name", "Bob")
+PRINT data.FIND("Name", "Nobody")
+PRINT data.SORT("Score")
+PRINT data.SORT("Name")
+
+PRINT "=== Matrix: SAVE / READ_CSV round-trip ==="
+data.SAVE("test_scores.csv")
+VAR loaded = READ_CSV("test_scores.csv")
+PRINT loaded
+
+PRINT "=== RANDOM ==="
+PRINT RANDOM(1, 6)      # a random number from 1 to 6
+PRINT RANDOM(1, 100)    # a random number from 1 to 100
+PRINT RANDOM(5, 5)      # degenerate range: always 5
+
+PRINT "=== TRY / CATCH ==="
+TRY {
+    PRINT 10 / 0
+} CATCH err {
+    PRINT "Caught: " + err
+}
+PRINT "Still running after TRY/CATCH"
+
+TRY {
+    PRINT RANDOM(10, 1)
+} CATCH err {
+    PRINT "Caught: " + err
+}
+
+PRINT "=== INPUT ==="
+PRINT "(wrapped in TRY/CATCH so this still runs cleanly with nothing piped in)"
+TRY {
+    PRINT "Type something and press Enter:"
+    INPUT userValue
+    PRINT "You entered: " + userValue
+} CATCH err {
+    PRINT "No input available (expected if nothing was piped in): " + err
+}
+
+PRINT "=== CLEAR_SCREEN and SLEEP ==="
+PRINT "Pausing briefly, then clearing the screen (scrollback still keeps everything above)..."
+SLEEP(0.2)
+CLEAR_SCREEN()
+PRINT "Screen cleared. CLEAR_SCREEN() and SLEEP() both work."
+
+PRINT "=== All tests completed ==="

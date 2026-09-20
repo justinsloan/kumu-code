@@ -1,0 +1,390 @@
+# =====================================================================
+# Interactive Address Book
+#
+# The primary example program for the Kumu language: it uses essentially
+# every feature Kumu has, together, for a real purpose.
+#
+# Contacts persist in contacts.csv: loaded at startup (created with
+# starter contacts if missing, its shape sanity-checked with .COLS()),
+# edited through a menu, and saved back when you choose "Save and Quit"
+# -- or when input runs out, thanks to TRY/CATCH around the main menu
+# loop: that used to crash and lose anything unsaved, but it's caught and
+# treated as a graceful request to save and exit instead.
+#
+# The book is a live Matrix -- a genuine object with dot-methods
+# (.GET/.SET/.APPEND_ROW/.DELETE_ROW/.SORT/.SAVE/...), not a value passed
+# as the first argument to a family of functions. Every method is
+# header-aware: row 1 is permanently "Name,Phone,Email", and row numbers
+# everywhere else always mean data rows -- .ROWS() never counts the
+# header, .GET(1, ...) is always the first contact, never the header
+# text. Columns can be named ("Name") or positional (1) interchangeably.
+#
+# One deliberate exception to "use the new methods everywhere": contact
+# name lookup (search/update/delete) stays case-insensitive, which this
+# address book has always done for usability -- typing "bob smith" should
+# still find "Bob Smith". The built-in .FIND() method does exact,
+# case-SENSITIVE matching, so using it here would have quietly regressed
+# that. indexOfContact() below is still a hand-rolled scan for exactly
+# that reason; .FIND() gets its proper demonstration in test.kumu instead,
+# where an exact match is genuinely what's wanted.
+#
+# The menu is two levels (Main -> Manage Contacts / Tools) rather than
+# one long flat list. Each level is its own WHILE loop with a straight
+# IF/ELSEIF/ELSE dispatch -- ELSEIF is what keeps that dispatch flat and
+# readable instead of nesting deeper with every added option. Every
+# submenu's own `VAR inSubmenu` is genuinely local to that call (Kumu's
+# per-call scoping): Manage Contacts and Tools each have their own,
+# private copy, with no risk of one clobbering the other's.
+#
+# CLEAR_SCREEN() opens every menu, so the app always shows a clean screen
+# instead of endless scrollback; pauseForReading() (a thin wrapper around
+# SLEEP) runs after every action, so a result has a moment on screen
+# before the next CLEAR_SCREEN would otherwise wipe it away unread.
+#
+# Menu actions are zero-argument FUNCTIONs that read and write the
+# global `book`/`contactCount`/`traceMode` variables directly rather than
+# taking them as parameters -- this language has no lexical scoping for
+# bare assignment, so that's not a trick, just the natural way to write
+# a stateful action in it. The lower-level lookup helpers
+# (contactSummaryByIndex and friends) still take `book` explicitly,
+# since they're the reusable, "pure" part.
+# =====================================================================
+
+PRINT "=== Address Book ==="
+
+VAR CONTACTS_FILE = "contacts.csv"
+
+IF FILE_EXISTS(CONTACTS_FILE) {
+    PRINT "Found existing " + CONTACTS_FILE + " - loading contacts."
+} ELSE {
+    PRINT "No " + CONTACTS_FILE + " found - creating one with starter contacts."
+    VAR starterBook = (
+        ("Name", "Phone", "Email"),
+        ("Alice Johnson", "555-0101", "alice@example.com"),
+        ("Bob Smith", "555-0142", "bob@example.com"),
+        ("Carol Davis", "555-0199", "carol@example.com"),
+        ("David Lee", "555-0123", "david@example.com")
+    )
+    starterBook.SAVE(CONTACTS_FILE)
+}
+
+VAR book = READ_CSV(CONTACTS_FILE)
+IF book.COLS() != 3 {
+    PRINT "Warning: " + CONTACTS_FILE + " does not have exactly 3 columns (Name, Phone, Email); some fields may be blank or misaligned."
+}
+VAR contactCount = book.ROWS()
+
+# --- Lookup helpers (pure: take `book` explicitly) ----------------------
+
+# Formats contact slot i (1-based) as "Name | Phone | Email", or a
+# message if i is out of range.
+FUNCTION contactSummaryByIndex(book, i) {
+    VAR totalContacts = book.ROWS()
+    IF i < 1 {
+        RETURN "No contact at index " + i
+    } ELSEIF i > totalContacts {
+        RETURN "No contact at index " + i
+    } ELSE {
+        VAR name = book.GET(i, "Name")
+        VAR phone = book.GET(i, "Phone")
+        VAR email = book.GET(i, "Email")
+        RETURN name + " | " + phone + " | " + email
+    }
+}
+
+# Finds a contact by name (case-insensitive); returns its slot number
+# (1-based) or 0. A hand-rolled scan rather than .FIND() -- see the
+# header comment on why case-insensitivity is worth keeping here.
+FUNCTION indexOfContact(book, searchName) {
+    VAR totalRows = book.ROWS()
+    VAR row = 1
+    WHILE row <= totalRows {
+        IF UPPER(book.GET(row, "Name")) == UPPER(searchName) {
+            RETURN row
+        }
+        row = row + 1
+    }
+    RETURN 0
+}
+
+FUNCTION findContactByName(book, searchName) {
+    VAR idx = indexOfContact(book, searchName)
+    IF idx == 0 {
+        RETURN "Not found: " + searchName
+    } ELSE {
+        RETURN contactSummaryByIndex(book, idx)
+    }
+}
+
+FUNCTION contactExists(book, searchName) {
+    RETURN indexOfContact(book, searchName) != 0
+}
+
+# Prints every contact whose name starts with prefix (case-insensitive).
+# Returns 1 if anything matched, 0 otherwise.
+FUNCTION printContactsWithPrefix(book, prefix) {
+    VAR totalRows = book.ROWS()
+    VAR prefixLen = LEN(prefix)
+    VAR row = 1
+    VAR found = 0
+    WHILE row <= totalRows {
+        VAR candidateName = book.GET(row, "Name")
+        IF LEN(candidateName) >= prefixLen {
+            IF UPPER(SUBSTRING(candidateName, 1, prefixLen)) == UPPER(prefix) {
+                PRINT contactSummaryByIndex(book, row)
+                found = 1
+            }
+        }
+        row = row + 1
+    }
+    RETURN found
+}
+
+# Gives a result a moment on screen before the next CLEAR_SCREEN wipes it.
+FUNCTION pauseForReading() {
+    SLEEP(2)
+}
+
+# --- Menu screens (each opens with a clean screen) ----------------------
+
+FUNCTION printMainMenu() {
+    CLEAR_SCREEN()
+    PRINT "=== Address Book ==="
+    PRINT ""
+    PRINT "--- Main Menu ---"
+    PRINT "1. Manage Contacts"
+    PRINT "2. Tools"
+    PRINT "3. Save and Quit"
+    PRINT "Enter your choice (1-3):"
+}
+
+FUNCTION printContactsMenu() {
+    CLEAR_SCREEN()
+    PRINT "--- Manage Contacts ---"
+    PRINT "1. List all contacts"
+    PRINT "2. Search for a contact"
+    PRINT "3. Add a new contact"
+    PRINT "4. Update a contact's phone number"
+    PRINT "5. Delete a contact"
+    PRINT "6. Back to main menu"
+    PRINT "Enter your choice (1-6):"
+}
+
+FUNCTION printToolsMenu() {
+    CLEAR_SCREEN()
+    PRINT "--- Tools ---"
+    PRINT "1. Show a random contact"
+    PRINT "2. Export contacts to a text report"
+    PRINT "3. Sort contacts alphabetically"
+    PRINT "4. Toggle debug trace"
+    PRINT "5. Back to main menu"
+    PRINT "Enter your choice (1-5):"
+}
+
+# --- Menu actions (act on the global book/contactCount/traceMode) -------
+
+FUNCTION handleList() {
+    IF contactCount == 0 {
+        PRINT "No contacts yet."
+    } ELSE {
+        PRINT book
+    }
+    pauseForReading()
+}
+
+# Exact match wins; otherwise falls back to a prefix search, so typing
+# part of a name (e.g. "al") still finds something.
+FUNCTION handleSearch() {
+    PRINT "Name (or prefix) to search for:"
+    INPUT searchName
+    IF contactExists(book, searchName) {
+        PRINT findContactByName(book, searchName)
+    } ELSE {
+        VAR anyMatch = printContactsWithPrefix(book, searchName)
+        IF anyMatch == 0 {
+            PRINT "Not found: " + searchName
+        }
+    }
+    pauseForReading()
+}
+
+FUNCTION handleAdd() {
+    PRINT "Name:"
+    INPUT newName
+    IF LEN(newName) == 0 {
+        PRINT "Name cannot be empty."
+    } ELSEIF contactExists(book, newName) {
+        PRINT "A contact named " + newName + " already exists."
+    } ELSE {
+        PRINT "Phone:"
+        INPUT newPhone
+        PRINT "Email:"
+        INPUT newEmail
+        book = book.APPEND_ROW(newName, newPhone, newEmail)
+        contactCount = contactCount + 1
+        PRINT "Added " + newName + "."
+    }
+    pauseForReading()
+}
+
+FUNCTION handleUpdate() {
+    PRINT "Name of the contact to update:"
+    INPUT updateName
+    VAR updateIdx = indexOfContact(book, updateName)
+    IF updateIdx == 0 {
+        PRINT "No contact named " + updateName + "."
+    } ELSE {
+        PRINT "New phone number:"
+        INPUT newPhoneNumber
+        book = book.SET(updateIdx, "Phone", newPhoneNumber)
+        PRINT "Updated " + updateName + "."
+    }
+    pauseForReading()
+}
+
+FUNCTION handleDelete() {
+    PRINT "Name of the contact to delete:"
+    INPUT deleteName
+    VAR deleteIdx = indexOfContact(book, deleteName)
+    IF deleteIdx == 0 {
+        PRINT "No contact named " + deleteName + "."
+    } ELSE {
+        book = book.DELETE_ROW(deleteIdx)
+        contactCount = contactCount - 1
+        PRINT "Deleted " + deleteName + "."
+    }
+    pauseForReading()
+}
+
+FUNCTION handleRandomContact() {
+    IF contactCount == 0 {
+        PRINT "No contacts yet."
+    } ELSE {
+        PRINT "Picking a random contact..."
+        SLEEP(1)
+        VAR randIdx = RANDOM(1, contactCount)
+        PRINT contactSummaryByIndex(book, randIdx)
+    }
+    pauseForReading()
+}
+
+FUNCTION handleExportReport() {
+    IF contactCount == 0 {
+        PRINT "No contacts to export yet."
+    } ELSE {
+        VAR NEWLINE = "
+"
+        VAR report = "Address Book Report" + NEWLINE + NEWLINE + book
+        WRITE_FILE("address_report.txt", report)
+        VAR reportBack = READ_FILE("address_report.txt")
+        PRINT "Saved address_report.txt:"
+        PRINT reportBack
+    }
+    pauseForReading()
+}
+
+FUNCTION handleSortContacts() {
+    IF contactCount == 0 {
+        PRINT "No contacts yet."
+    } ELSE {
+        book = book.SORT("Name")
+        PRINT "Sorted alphabetically by name:"
+        PRINT book
+    }
+    pauseForReading()
+}
+
+FUNCTION handleToggleTrace() {
+    traceMode = !traceMode
+    TRACE traceMode
+    IF traceMode == 1 {
+        PRINT "Trace mode is now ON."
+    } ELSE {
+        PRINT "Trace mode is now OFF."
+    }
+    pauseForReading()
+}
+
+# --- Submenus -------------------------------------------------------------
+
+FUNCTION runContactsMenu() {
+    VAR inSubmenu = 1
+    WHILE inSubmenu == 1 {
+        printContactsMenu()
+        INPUT choice
+        IF choice == 1 {
+            handleList()
+        } ELSEIF choice == 2 {
+            handleSearch()
+        } ELSEIF choice == 3 {
+            handleAdd()
+        } ELSEIF choice == 4 {
+            handleUpdate()
+        } ELSEIF choice == 5 {
+            handleDelete()
+        } ELSEIF choice == 6 {
+            inSubmenu = 0
+        } ELSE {
+            PRINT "Invalid choice. Please enter a number from 1 to 6."
+            pauseForReading()
+        }
+    }
+}
+
+FUNCTION runToolsMenu() {
+    VAR inSubmenu = 1
+    WHILE inSubmenu == 1 {
+        printToolsMenu()
+        INPUT choice
+        IF choice == 1 {
+            handleRandomContact()
+        } ELSEIF choice == 2 {
+            handleExportReport()
+        } ELSEIF choice == 3 {
+            handleSortContacts()
+        } ELSEIF choice == 4 {
+            handleToggleTrace()
+        } ELSEIF choice == 5 {
+            inSubmenu = 0
+        } ELSE {
+            PRINT "Invalid choice. Please enter a number from 1 to 5."
+            pauseForReading()
+        }
+    }
+}
+
+# --- Main menu loop ----------------------------------------------------
+
+VAR running = 1
+VAR traceMode = 0
+pauseForReading()
+
+WHILE running == 1 {
+    TRY {
+        printMainMenu()
+        INPUT choice
+        IF choice == 1 {
+            runContactsMenu()
+        } ELSEIF choice == 2 {
+            runToolsMenu()
+        } ELSEIF choice == 3 {
+            running = 0
+        } ELSE {
+            PRINT "Invalid choice. Please enter a number from 1 to 3."
+            pauseForReading()
+        }
+    } CATCH err {
+        IF INDEX_OF(err, "no more input") != 0 {
+            PRINT ""
+            PRINT "No more input available - saving and exiting."
+            running = 0
+        } ELSE {
+            PRINT "An error occurred: " + err
+            PRINT "Returning to the main menu."
+            pauseForReading()
+        }
+    }
+}
+
+book.SAVE(CONTACTS_FILE)
+PRINT "Saved " + contactCount + " contacts to " + CONTACTS_FILE + ". Goodbye!"

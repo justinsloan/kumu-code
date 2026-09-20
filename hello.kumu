@@ -1,0 +1,27 @@
+PRINT "=== Hello from outside the fucntion ==="
+VAR my_string = "I was passed into the function"
+
+FUNCTION xprint(x) {
+    IF x == "" {
+        PRINT "=== Hello from inside the function ==="
+    } ELSE {
+        PRINT x
+    }
+}
+
+FUNCTION retrand() {
+	rand = RANDOM(1,100)
+	RETURN rand
+}
+
+xprint("")
+xprint(my_string) # this is a comment
+
+# comments should not be executed
+
+FOR i = 1 TO 10 {
+    PRINT retrand()
+}
+
+# this should produce an error
+print my_string

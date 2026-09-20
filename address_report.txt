@@ -1,0 +1,7 @@
+Address Book Report
+
+Name          | Phone        | Email              
+------------- | ------------ | -------------------
+Alice Johnson | 555-0101     | alice@example.com  
+David Lee     | 555-0123     | david@example.com  
+Justin        | 808-555-4242 | justin@location.com

@@ -1,0 +1,230 @@
+# =====================================================================
+# Collections: Matrix and List
+#
+# Kumu has two ways to hold more than one value, and they are good at
+# different jobs:
+#
+#   A Matrix is a TABLE. Two dimensions, a permanent header row, and
+#   every cell is text. It is what you want for data that would
+#   otherwise live in a spreadsheet or a CSV file.
+#
+#   A List is a SEQUENCE. One dimension, indexed from 1, and it holds
+#   any values at all -- numbers stay numbers, and a list can even hold
+#   other lists. It is what you want for "several of something".
+#
+# They are not rivals. This program uses a Matrix to store a gradebook
+# and Lists to compute with it, which is the usual division of labour:
+# the table is where data lives, lists are where the work happens.
+#
+# The one rule both share, and the one that surprises people: NO method
+# ever changes the collection you called it on. Every one returns a new
+# collection. To keep a change, assign it back.
+#
+#   book = book.APPEND_ROW(...)      not just   book.APPEND_ROW(...)
+#
+# Run it with:  ./kumu collections.kumu
+# =====================================================================
+
+
+# --- Part 1: a Matrix is a table -------------------------------------
+#
+# Written as nested parentheses. Row 1 is the header, permanently --
+# every method treats it as labels, never as data, so "row 1" always
+# means the first real record.
+
+VAR book = (
+    ("Name", "Test1", "Test2", "Test3"),
+    ("Ann",  "88",    "92",    "79"),
+    ("Ben",  "95",    "71",    "84"),
+    ("Cy",   "72",    "100",   "91"),
+    ("Dee",  "64",    "78",    "")
+)
+
+PRINT "=== The gradebook ==="
+PRINT book
+PRINT ""
+PRINT "Students: " + book.ROWS() + "   (the header is not counted)"
+PRINT "Columns:  " + book.COLS()
+PRINT ""
+
+# Cells come out with .GET(row, column). The column may be named or
+# numbered -- these two are the same cell:
+PRINT "Ann's Test1 by name:     " + book.GET(1, "Test1")
+PRINT "Ann's Test1 by position: " + book.GET(1, 2)
+PRINT ""
+
+
+# --- Part 2: reading down a column -----------------------------------
+#
+# The aggregates work down one column. They are strict: every cell must
+# be a number, or they stop and tell you which one wasn't.
+
+PRINT "=== Whole-class figures for Test1 ==="
+PRINT "Total:   " + book.SUM("Test1")
+PRINT "Average: " + book.AVERAGE("Test1")
+PRINT "Lowest:  " + book.MIN("Test1")
+PRINT "Highest: " + book.MAX("Test1")
+PRINT ""
+
+# Dee never sat Test3, so that column has a blank in it. .SUM refuses to
+# guess what a blank means:
+PRINT "=== A column with a gap in it ==="
+TRY {
+    PRINT book.SUM("Test3")
+} CATCH err {
+    PRINT "SUM said: " + err
+}
+
+# .COUNT is the deliberate exception -- it counts the cells that ARE
+# numbers and quietly skips the rest, which is what you want when the
+# question is "how many people actually sat this test?"
+PRINT "Sat Test3: " + book.COUNT("Test3") + " of " + book.ROWS()
+PRINT ""
+
+
+# --- Part 3: where Matrix meets List ---------------------------------
+#
+# FOR EACH walks the data rows, handing you each one as a LIST of its
+# cells. This is the bridge between the two types, and it is where most
+# real work starts: the table gives you a row, and the row is a list you
+# can compute with.
+
+PRINT "=== Per-student report ==="
+
+FOR EACH row IN book {
+    # row is a List: row[1] is the name, row[2..4] are the three scores.
+    VAR name = row[1]
+
+    # .SLICE(start, length) takes the three score cells. They arrive as
+    # text, and one of them may be blank, so build a list of just the
+    # real numbers.
+    VAR scores = []
+    FOR EACH cell IN row.SLICE(2, 3) {
+        IF IS_NUMBER(cell) {
+            scores = scores.APPEND(NUMBER(cell))
+        }
+    }
+
+    IF scores.LEN() == 0 {
+        PRINT name + ": no scores yet"
+    } ELSE {
+        PRINT name + ": " + scores.JOIN(", ") +
+              "  (best " + scores.MAX() +
+              ", average " + ROUND(scores.AVERAGE()) +
+              ", sat " + scores.LEN() + ")"
+    }
+}
+
+PRINT ""
+
+
+# --- Part 4: what a List can do on its own ---------------------------
+
+PRINT "=== List operations ==="
+
+VAR nums = [88, 95, 72, 64]
+
+PRINT "The list:      " + nums
+PRINT "Length:        " + nums.LEN()
+PRINT "First / last:  " + nums[1] + " / " + nums[nums.LEN()]
+PRINT "Sorted:        " + nums.SORT()
+PRINT "Reversed:      " + nums.REVERSE()
+PRINT "Middle two:    " + nums.SLICE(2, 2)
+PRINT "Sum / average: " + nums.SUM() + " / " + nums.AVERAGE()
+PRINT "Has 72?        " + nums.CONTAINS(72)
+PRINT "Where is 72?   " + nums.INDEX_OF(72) + "   (0 would mean: not there)"
+PRINT ""
+
+# Notice what PRINT does with a list: it shows strings in quotes. Inside
+# a list that is the only thing telling the number 1 from the text "1".
+PRINT "Mixed types:   " + [1, "1", [1]]
+
+# .JOIN is what you want for output meant for a person to read:
+PRINT "Joined:        " + ["red", "green", "blue"].JOIN(" and ")
+PRINT ""
+
+
+# --- Part 5: nothing is ever modified in place -----------------------
+#
+# This catches everyone once. Both types behave the same way.
+
+PRINT "=== Methods return a new collection ==="
+
+VAR original = [3, 1, 2]
+VAR sorted = original.SORT()
+PRINT "original.SORT() gave: " + sorted
+PRINT "original is still:    " + original + "   <- unchanged"
+
+VAR grown = original.APPEND(4)
+PRINT "original.APPEND(4):   " + grown
+PRINT "original is still:    " + original
+
+# To keep a change, assign it back. That is all "modifying" means here:
+original = original.APPEND(4)
+PRINT "after assigning back: " + original
+PRINT ""
+
+# There is deliberately no `original[1] = 99`. Use .SET, and assign it:
+original = original.SET(1, 99)
+PRINT "after .SET(1, 99):    " + original
+PRINT ""
+
+
+# --- Part 6: growing the table ---------------------------------------
+#
+# SPLIT turns a line of text into a List, which is how data usually
+# arrives -- typed in, or read from a file.
+
+PRINT "=== Adding students ==="
+
+VAR incoming = "Eve,81,77,95"
+VAR parts = SPLIT(incoming, ",")
+PRINT "Parsed " + incoming + " into " + parts.LEN() + " fields: " + parts
+
+book = book.APPEND_ROW(parts[1], parts[2], parts[3], parts[4])
+
+# A name with a comma in it is no problem -- it only has to survive the
+# CSV file, and Part 7 shows that it does.
+book = book.APPEND_ROW("Frank, Jr.", "70", "75", "80")
+
+PRINT "The class is now " + book.ROWS() + " students."
+PRINT ""
+
+PRINT "Sorted by Test1, lowest first:"
+PRINT book.SORT("Test1")
+PRINT ""
+
+# .FIND gives the row number of a match, or 0. Pass 1 as a third
+# argument when you want it to ignore capitalisation -- which is almost
+# always what you want for something a person typed.
+PRINT "FIND 'ben' exactly:          " + book.FIND("Name", "ben")
+PRINT "FIND 'ben' ignoring case:    " + book.FIND("Name", "ben", 1)
+PRINT "...which is row " + book.FIND("Name", "ben", 1) + ", scoring " +
+      book.GET(book.FIND("Name", "ben", 1), "Test1") + " on Test1"
+PRINT ""
+
+# Removing works the same way: a new Matrix, assigned back.
+VAR withoutFirst = book.DELETE_ROW(1)
+PRINT "After DELETE_ROW(1): " + withoutFirst.ROWS() + " students"
+PRINT "book itself still:   " + book.ROWS() + " students"
+PRINT ""
+
+
+# --- Part 7: the table goes to a file and comes back -----------------
+
+PRINT "=== Saving and loading ==="
+
+book.SAVE("gradebook.csv")
+PRINT "Written to gradebook.csv:"
+PRINT READ_FILE("gradebook.csv")
+
+VAR loaded = READ_CSV("gradebook.csv")
+PRINT "Read back " + loaded.ROWS() + " students and " + loaded.COLS() + " columns."
+
+# The name containing a comma survived the round trip intact: it was
+# written wrapped in quotes and read back as one cell, not two.
+VAR frank = loaded.FIND("Name", "Frank, Jr.")
+PRINT "Row " + frank + " is still exactly: " + loaded.GET(frank, "Name")
+PRINT ""
+
+PRINT "=== Done ==="
