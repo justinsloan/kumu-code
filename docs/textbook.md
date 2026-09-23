@@ -9,7 +9,7 @@ permalink: /textbook/
 
 *A short, example-driven introduction to the Kumu programming language.*
 
-This textbook is a companion to `manual.txt`, Kumu's reference manual. Where the manual answers "what does this do, precisely?", this book answers "how do I use it, and why does it work this way?" — with a runnable example for nearly every idea. Every example in this book has actually been run through the interpreter; the output shown is real, not guessed.
+This textbook is a companion to the [Manual]({{ site.baseurl }}/manual/), Kumu's reference. Where the manual answers "what does this do, precisely?", this book answers "how do I use it, and why does it work this way?" — with a runnable example for nearly every idea. Every example in this book has actually been run through the interpreter; the output shown is real, not guessed.
 
 Kumu is BASIC-inspired: familiar keywords like `PRINT`, `IF`, and `FOR`, but built around **blocks** written in braces — `{ ... }` — instead of classic BASIC's line numbers. Every block in the language looks the same, so there is only ever one shape to learn.
 
@@ -2929,7 +2929,7 @@ A few exercises to try on your own:
 4. Rewrite `address.kumu`'s `indexOfContact()` to use `.FIND(column, value, 1)` instead of its hand-rolled loop, and check the behaviour is unchanged.
 5. Write a word-frequency counter: `SPLIT` a sentence on spaces, then for each word report how many times it appears using `.CONTAINS` and `.INDEX_OF`.
 
-For the complete, precise behavior of every keyword and function — including edge cases this book doesn't dwell on — see `manual.txt`.
+For the complete, precise behavior of every keyword and function — including edge cases this book doesn't dwell on — see the [Manual]({{ site.baseurl }}/manual/).
 
 ---
 
