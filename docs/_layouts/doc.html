@@ -1,0 +1,21 @@
+---
+layout: default
+---
+
+{%- comment -%}
+  Long-document layout: the manual and the textbook are each a single page,
+  so they get an "On this page" panel built from their h2s (chapters in the
+  textbook, numbered sections in the manual). Everything else is the theme's
+  default layout, which supplies the page h1 from front matter.
+{%- endcomment -%}
+
+<div class="kumu-doc">
+  <nav class="kumu-toc" aria-label="On this page">
+    <p class="kumu-toc__title">On this page</p>
+    {{ content | kumu_toc }}
+  </nav>
+
+  <div class="kumu-doc__body">
+    {{ content }}
+  </div>
+</div>

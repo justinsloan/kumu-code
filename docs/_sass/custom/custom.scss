@@ -1,0 +1,72 @@
+// Long-document layout (manual, textbook) -----------------------------
+//
+// Below 1200px the TOC simply stacks above the prose. From 1200px it
+// becomes a sticky right-hand panel, which is where a 3,800-line
+// textbook stops being navigable without one.
+
+.kumu-doc {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 2rem;
+}
+
+.kumu-toc {
+  font-size: 0.75rem;
+  line-height: 1.4;
+
+  &__title {
+    margin: 0 0 0.5rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-size: 0.6875rem;
+    color: $grey-dk-100;
+  }
+
+  &__list {
+    margin: 0;
+    padding-left: 1rem;
+  }
+
+  &__item {
+    margin: 0.2rem 0;
+  }
+
+  a {
+    text-decoration: none;
+    &:hover { text-decoration: underline; }
+  }
+}
+
+@media (min-width: 1200px) {
+  .kumu-doc {
+    grid-template-columns: minmax(0, 1fr) 15rem;
+    align-items: start;
+  }
+
+  .kumu-doc__body {
+    grid-column: 1;
+    grid-row: 1;
+    min-width: 0;
+  }
+
+  .kumu-toc {
+    grid-column: 2;
+    grid-row: 1;
+    position: sticky;
+    top: 1.5rem;
+    max-height: calc(100vh - 3rem);
+    overflow-y: auto;
+    padding-left: 1rem;
+    border-left: 1px solid $border-color;
+  }
+}
+
+// Home page hero ------------------------------------------------------
+
+.kumu-tagline {
+  font-size: 1.125rem;
+  line-height: 1.5;
+  color: $grey-dk-100;
+  margin-bottom: 1.5rem;
+}

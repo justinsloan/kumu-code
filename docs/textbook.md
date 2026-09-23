@@ -1,3 +1,10 @@
+---
+title: Textbook
+nav_order: 3
+layout: doc
+permalink: /textbook/
+---
+
 # The Kumu Textbook
 
 *A short, example-driven introduction to the Kumu programming language.*

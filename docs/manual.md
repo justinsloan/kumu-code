@@ -1,3 +1,10 @@
+---
+title: Manual
+nav_order: 4
+layout: doc
+permalink: /manual/
+---
+
 # Manual: Kumu
 
 This manual describes the syntax and capabilities of Kumu, the language implemented in this project. Kumu is BASIC-inspired but modern and structured, using explicit blocks instead of line numbers. Run a program with `./kumu program.kumu`.

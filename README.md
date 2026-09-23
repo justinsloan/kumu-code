@@ -8,6 +8,8 @@ drops the parts that make it hard to learn from. There are no line numbers and n
 Every block in the language is written exactly one way — a header followed by `{ ... }` —
 so there is only ever one shape to learn.
 
+**📖 Read the manual and textbook at <https://justinsloan.github.io/kumu-code/>**
+
 ```basic
 # Average a student's scores, and say how they did.
 
@@ -126,15 +128,20 @@ Two design choices worth knowing before you read any code here:
 
 ## Documentation
 
-- **[`kumu_textbook.md`](kumu_textbook.md)** — a 16-chapter, example-driven course,
-  written to be worked through in order by someone learning alone. Each chapter opens
-  with the *problem* a feature solves before showing any syntax, then covers common
-  mistakes and three kinds of exercise (*predict*, *fix*, *write*). Every answer is in
-  Appendix A, and every example has been run through the interpreter — the output shown
-  is real, not guessed.
-- **[`manual.txt`](manual.txt)** — the reference manual. Ten sections covering the full
-  syntax, every built-in, and precise semantics. Where the textbook answers "how do I use
-  this?", the manual answers "what does this do, exactly?"
+Both documents are published, rendered and searchable, at
+**<https://justinsloan.github.io/kumu-code/>**. Their sources live in [`docs/`](docs/).
+
+- **[Textbook](https://justinsloan.github.io/kumu-code/textbook/)** — a 16-chapter,
+  example-driven course, written to be worked through in order by someone learning alone.
+  Each chapter opens with the *problem* a feature solves before showing any syntax, then
+  covers common mistakes and three kinds of exercise (*predict*, *fix*, *write*). Every
+  answer is in Appendix A, and every example has been run through the interpreter — the
+  output shown is real, not guessed.
+- **[Manual](https://justinsloan.github.io/kumu-code/manual/)** — the reference manual.
+  Ten sections covering the full syntax, every built-in, and precise semantics. Where the
+  textbook answers "how do I use this?", the manual answers "what does this do, exactly?"
+- **[Goals](https://justinsloan.github.io/kumu-code/goals/)** — what Kumu is trying to do
+  and why it is shaped the way it is.
 
 ## Example programs
 
