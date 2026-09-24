@@ -1,0 +1,912 @@
+# =====================================================================
+# Interactive To-Do List
+#
+# A complete to-do manager: items carry an optional due date, optional
+# tags and a priority, they remember the day they were added, and
+# completing one archives it in place rather than destroying it.
+# Everything persists in todo.csv.
+#
+# Items are addressed by Id, never by the row they happen to occupy.
+# That matters here in a way it does not in address.kumu: sorting
+# rewrites the row order, so "complete number 3" would otherwise mean a
+# different item before and after a sort. Ids are handed out as
+# highest-so-far plus one and never reused.
+#
+# The archive lives in the same file, marked by the Status column, so a
+# completed item keeps its Id, its tags and its original Added date.
+# Nothing is moved between files and nothing is deleted on completion --
+# only "Delete" deletes, and it asks first.
+#
+# Priority is stored as 1, 2 or 3 rather than "high"/"med"/"low" so that
+# the column is entirely numeric. SORT auto-detects numeric columns, and
+# a text priority would sort "high, low, med" -- alphabetical and
+# useless. The words are put back on only for display.
+#
+# Due dates use the date functions: a blank due date is allowed, and
+# entry accepts "today", "tomorrow" or a plain number of days from now
+# as well as a full YYYY-MM-DD, which normalizeDue() turns into a real
+# date.
+#
+# One consequence of dates being ordinary text worth knowing before it
+# looks like a bug: an empty cell sorts before any date, so items with
+# no due date come first ascending and last descending. The sort menu
+# says so on screen.
+#
+# Run it with:  ./kumu todo.kumu
+# =====================================================================
+
+PRINT "=== To-Do List ==="
+
+VAR TODO_FILE = "todo.csv"
+
+# Captured once, so a session that runs past midnight stays internally
+# consistent -- every stamp and every overdue check in one run agrees.
+VAR TODAY_DATE = TODAY()
+
+IF FILE_EXISTS(TODO_FILE) {
+    PRINT "Found existing " + TODO_FILE + " - loading items."
+} ELSE {
+    PRINT "No " + TODO_FILE + " found - creating one with starter items."
+    # A Matrix literal's cells must be literal text, so the header is
+    # written as a literal and every row is appended -- APPEND_ROW does
+    # take expressions.
+    VAR starter = (
+        ("Id", "Title", "Due", "Tags", "Priority", "Added", "Status", "Completed")
+    )
+    starter = starter.APPEND_ROW(1, "Read the Kumu manual", DATE_ADD(TODAY_DATE, 3), "learning", 2, TODAY_DATE, "active", "")
+    starter = starter.APPEND_ROW(2, "Water the plants", TODAY_DATE, "home", 1, TODAY_DATE, "active", "")
+    starter = starter.APPEND_ROW(3, "Plan the weekend", "", "fun,home", 3, TODAY_DATE, "active", "")
+    starter.SAVE(TODO_FILE)
+}
+
+VAR todo = READ_CSV(TODO_FILE)
+IF todo.COLS() != 8 {
+    PRINT "Warning: " + TODO_FILE + " does not have exactly 8 columns (Id, Title, Due, Tags, Priority, Added, Status, Completed); some fields may be blank or misaligned."
+}
+VAR itemCount = todo.ROWS()
+VAR traceMode = 0
+
+
+# --- Pure helpers (take `todo` explicitly) -----------------------------
+
+# The next free Id: one past the highest in use, so deleting an item
+# never lets its Id come back and attach to something else.
+FUNCTION nextId(todo) {
+    VAR highest = 0
+    VAR row = 1
+    WHILE row <= todo.ROWS() {
+        VAR thisId = NUMBER(todo.GET(row, "Id"))
+        IF thisId > highest {
+            highest = thisId
+        }
+        row = row + 1
+    }
+    RETURN highest + 1
+}
+
+# The row holding this Id, or 0 if there is none -- the same "0 means
+# not found" convention as INDEX_OF and .FIND.
+FUNCTION rowOfId(todo, wantedId) {
+    RETURN todo.FIND("Id", wantedId)
+}
+
+# An item is overdue only if it is still active AND dated AND that date
+# has passed. A finished item is never overdue, however late it was.
+FUNCTION isOverdue(todo, row) {
+    IF todo.GET(row, "Status") != "active" {
+        RETURN 0
+    }
+    IF LEN(todo.GET(row, "Due")) == 0 {
+        RETURN 0
+    }
+    IF DATE_DIFF(TODAY_DATE, todo.GET(row, "Due")) < 0 {
+        RETURN 1
+    }
+    RETURN 0
+}
+
+FUNCTION priorityName(p) {
+    IF p == "1" {
+        RETURN "high"
+    } ELSEIF p == "2" {
+        RETURN "med"
+    } ELSEIF p == "3" {
+        RETURN "low"
+    }
+    RETURN p
+}
+
+# How a due date reads at a glance. The Days column is computed, not
+# stored -- storing it would be wrong by morning.
+FUNCTION dueSummary(todo, row) {
+    VAR due = todo.GET(row, "Due")
+    IF LEN(due) == 0 {
+        RETURN ""
+    }
+    IF todo.GET(row, "Status") != "active" {
+        RETURN ""
+    }
+    VAR days = DATE_DIFF(TODAY_DATE, due)
+    IF days < 0 {
+        RETURN "OVERDUE by " + ABS(days)
+    } ELSEIF days == 0 {
+        RETURN "due today"
+    } ELSEIF days == 1 {
+        RETURN "tomorrow"
+    }
+    RETURN "in " + days
+}
+
+# Turns what the user typed into a stored due date. Accepts a blank (no
+# due date), "today", "tomorrow", a number of days from now, or a full
+# YYYY-MM-DD. Returns "?" for anything else -- a marker the caller must
+# check, and one that can never be mistaken for a real date.
+FUNCTION normalizeDue(typed) {
+    VAR text = TRIM(typed)
+    IF LEN(text) == 0 {
+        RETURN ""
+    }
+    VAR lowered = LOWER(text)
+    IF lowered == "today" {
+        RETURN TODAY_DATE
+    }
+    IF lowered == "tomorrow" {
+        RETURN DATE_ADD(TODAY_DATE, 1)
+    }
+    # A bare number means "that many days from today". Note this also
+    # catches "+7": INPUT turns a line that looks like a number into a
+    # Number, so the "+" is gone before this function ever sees it.
+    IF IS_NUMBER(text) {
+        RETURN DATE_ADD(TODAY_DATE, NUMBER(text))
+    }
+    IF IS_DATE(text) {
+        RETURN text
+    }
+    RETURN "?"
+}
+
+FUNCTION countStatus(todo, wanted) {
+    VAR total = 0
+    VAR row = 1
+    WHILE row <= todo.ROWS() {
+        IF todo.GET(row, "Status") == wanted {
+            total = total + 1
+        }
+        row = row + 1
+    }
+    RETURN total
+}
+
+FUNCTION countOverdue(todo) {
+    VAR total = 0
+    VAR row = 1
+    WHILE row <= todo.ROWS() {
+        IF isOverdue(todo, row) == 1 {
+            total = total + 1
+        }
+        row = row + 1
+    }
+    RETURN total
+}
+
+
+# --- View builders (each returns a fresh display Matrix) ---------------
+#
+# Views are built rather than printed row by row because PRINTing a
+# Matrix already aligns the columns. Each starts from a header-only
+# literal and appends the rows that qualify.
+
+FUNCTION activeView(todo) {
+    VAR view = (
+        ("Id", "Pri", "Title", "Due", "When", "Tags")
+    )
+    VAR row = 1
+    WHILE row <= todo.ROWS() {
+        IF todo.GET(row, "Status") == "active" {
+            view = view.APPEND_ROW(todo.GET(row, "Id"),
+                                   priorityName(todo.GET(row, "Priority")),
+                                   todo.GET(row, "Title"),
+                                   todo.GET(row, "Due"),
+                                   dueSummary(todo, row),
+                                   todo.GET(row, "Tags"))
+        }
+        row = row + 1
+    }
+    RETURN view
+}
+
+FUNCTION archiveView(todo) {
+    VAR view = (
+        ("Id", "Title", "Tags", "Added", "Completed")
+    )
+    VAR row = 1
+    WHILE row <= todo.ROWS() {
+        IF todo.GET(row, "Status") == "done" {
+            view = view.APPEND_ROW(todo.GET(row, "Id"),
+                                   todo.GET(row, "Title"),
+                                   todo.GET(row, "Tags"),
+                                   todo.GET(row, "Added"),
+                                   todo.GET(row, "Completed"))
+        }
+        row = row + 1
+    }
+    RETURN view
+}
+
+# Every active item whose due date falls within `days` of today,
+# including ones already overdue.
+FUNCTION dueWithinView(todo, days) {
+    VAR view = (
+        ("Id", "Pri", "Title", "Due", "When", "Tags")
+    )
+    VAR row = 1
+    WHILE row <= todo.ROWS() {
+        IF todo.GET(row, "Status") == "active" AND LEN(todo.GET(row, "Due")) > 0 {
+            IF DATE_DIFF(TODAY_DATE, todo.GET(row, "Due")) <= days {
+                view = view.APPEND_ROW(todo.GET(row, "Id"),
+                                       priorityName(todo.GET(row, "Priority")),
+                                       todo.GET(row, "Title"),
+                                       todo.GET(row, "Due"),
+                                       dueSummary(todo, row),
+                                       todo.GET(row, "Tags"))
+            }
+        }
+        row = row + 1
+    }
+    RETURN view
+}
+
+FUNCTION overdueView(todo) {
+    VAR view = (
+        ("Id", "Pri", "Title", "Due", "When", "Tags")
+    )
+    VAR row = 1
+    WHILE row <= todo.ROWS() {
+        IF isOverdue(todo, row) == 1 {
+            view = view.APPEND_ROW(todo.GET(row, "Id"),
+                                   priorityName(todo.GET(row, "Priority")),
+                                   todo.GET(row, "Title"),
+                                   todo.GET(row, "Due"),
+                                   dueSummary(todo, row),
+                                   todo.GET(row, "Tags"))
+        }
+        row = row + 1
+    }
+    RETURN view
+}
+
+# Case-insensitive substring match on the title, so "milk" finds
+# "Buy Milk".
+FUNCTION searchView(todo, text) {
+    VAR view = (
+        ("Id", "Pri", "Title", "Due", "Status", "Tags")
+    )
+    VAR row = 1
+    WHILE row <= todo.ROWS() {
+        IF CONTAINS(UPPER(todo.GET(row, "Title")), UPPER(text)) {
+            view = view.APPEND_ROW(todo.GET(row, "Id"),
+                                   priorityName(todo.GET(row, "Priority")),
+                                   todo.GET(row, "Title"),
+                                   todo.GET(row, "Due"),
+                                   todo.GET(row, "Status"),
+                                   todo.GET(row, "Tags"))
+        }
+        row = row + 1
+    }
+    RETURN view
+}
+
+# Tags are held as one comma-separated cell, so a tag match is a
+# substring match on that cell rather than an equality test.
+FUNCTION tagView(todo, tag) {
+    VAR view = (
+        ("Id", "Pri", "Title", "Due", "Status", "Tags")
+    )
+    VAR row = 1
+    WHILE row <= todo.ROWS() {
+        IF CONTAINS(UPPER(todo.GET(row, "Tags")), UPPER(tag)) {
+            view = view.APPEND_ROW(todo.GET(row, "Id"),
+                                   priorityName(todo.GET(row, "Priority")),
+                                   todo.GET(row, "Title"),
+                                   todo.GET(row, "Due"),
+                                   todo.GET(row, "Status"),
+                                   todo.GET(row, "Tags"))
+        }
+        row = row + 1
+    }
+    RETURN view
+}
+
+# Prints a view, or says it is empty. A Matrix with no data rows still
+# has its header, which would otherwise print as a table of nothing.
+FUNCTION showView(view, emptyMessage) {
+    IF view.ROWS() == 0 {
+        PRINT emptyMessage
+    } ELSE {
+        PRINT view
+        PRINT ""
+        PRINT view.ROWS() + " item(s)."
+    }
+}
+
+FUNCTION printItem(todo, row) {
+    PRINT "Id:        " + todo.GET(row, "Id")
+    PRINT "Title:     " + todo.GET(row, "Title")
+    PRINT "Priority:  " + priorityName(todo.GET(row, "Priority"))
+    PRINT "Due:       " + todo.GET(row, "Due") + "  " + dueSummary(todo, row)
+    PRINT "Tags:      " + todo.GET(row, "Tags")
+    PRINT "Added:     " + todo.GET(row, "Added") + " (" + WEEKDAY(todo.GET(row, "Added")) + ")"
+    PRINT "Status:    " + todo.GET(row, "Status")
+    IF LEN(todo.GET(row, "Completed")) > 0 {
+        PRINT "Completed: " + todo.GET(row, "Completed")
+    }
+}
+
+
+# --- Small input helpers -----------------------------------------------
+
+# Gives a result a moment on screen before the next CLEAR_SCREEN wipes it.
+FUNCTION pauseForReading() {
+    SLEEP(1)
+}
+
+# Asks a yes/no question; anything but Y or YES is a no, which is the
+# safe default for the one caller that destroys data.
+FUNCTION confirm(question) {
+    PRINT question + " (y/n):"
+    INPUT answer
+    VAR given = UPPER(TRIM(STRING(answer)))
+    IF given == "Y" OR given == "YES" {
+        RETURN 1
+    }
+    RETURN 0
+}
+
+
+# --- Menu screens (each opens with a clean screen) ---------------------
+
+FUNCTION printMainMenu() {
+    CLEAR_SCREEN()
+    PRINT "=== To-Do List ===    " + TODAY_DATE + " (" + WEEKDAY(TODAY_DATE) + ")"
+    PRINT ""
+    PRINT countStatus(todo, "active") + " active, " + countStatus(todo, "done") + " done, " + countOverdue(todo) + " overdue"
+    PRINT ""
+    PRINT "--- Main Menu ---"
+    PRINT "1. View items"
+    PRINT "2. Add an item"
+    PRINT "3. Change an item"
+    PRINT "4. Sort"
+    PRINT "5. Tools"
+    PRINT "6. Save and Quit"
+    PRINT "Enter your choice (1-6):"
+}
+
+FUNCTION printViewMenu() {
+    CLEAR_SCREEN()
+    PRINT "--- View ---"
+    PRINT "1. Active items"
+    PRINT "2. Everything"
+    PRINT "3. Archive (completed)"
+    PRINT "4. Overdue"
+    PRINT "5. Due within 7 days"
+    PRINT "6. Search titles"
+    PRINT "7. Filter by tag"
+    PRINT "8. Show one item in full"
+    PRINT "9. Back"
+    PRINT "Enter your choice (1-9):"
+}
+
+FUNCTION printChangeMenu() {
+    CLEAR_SCREEN()
+    PRINT "--- Change ---"
+    PRINT "1. Mark an item complete"
+    PRINT "2. Reopen a completed item"
+    PRINT "3. Edit an item"
+    PRINT "4. Delete an item"
+    PRINT "5. Back"
+    PRINT "Enter your choice (1-5):"
+}
+
+FUNCTION printSortMenu() {
+    CLEAR_SCREEN()
+    PRINT "--- Sort ---"
+    PRINT "Items with no due date sort first ascending, last descending."
+    PRINT ""
+    PRINT "1. Due date, earliest first"
+    PRINT "2. Due date, latest first"
+    PRINT "3. Tag, A to Z"
+    PRINT "4. Tag, Z to A"
+    PRINT "5. Date added, oldest first"
+    PRINT "6. Date added, newest first"
+    PRINT "7. Priority, highest first"
+    PRINT "8. Title, A to Z"
+    PRINT "9. Back"
+    PRINT "Enter your choice (1-9):"
+}
+
+FUNCTION printToolsMenu() {
+    CLEAR_SCREEN()
+    PRINT "--- Tools ---"
+    PRINT "1. Statistics"
+    PRINT "2. Purge old completed items"
+    PRINT "3. Export a text report"
+    PRINT "4. Toggle TRACE"
+    PRINT "5. Back"
+    PRINT "Enter your choice (1-5):"
+}
+
+
+# --- Menu actions (act on the global todo/itemCount/traceMode) ---------
+
+FUNCTION handleAdd() {
+    PRINT "Title:"
+    INPUT newTitle
+    VAR title = TRIM(STRING(newTitle))
+    IF LEN(title) == 0 {
+        PRINT "Title cannot be empty."
+    } ELSE {
+        PRINT "Due date - YYYY-MM-DD, 'today', 'tomorrow', a number of days from now, or blank for none:"
+        INPUT dueTyped
+        VAR due = normalizeDue(STRING(dueTyped))
+        IF due == "?" {
+            PRINT "That is not a date I understand, and nothing was added."
+            PRINT "Try 2026-09-30, today, tomorrow, or 7."
+        } ELSE {
+            PRINT "Tags, comma-separated (blank for none):"
+            INPUT tagsTyped
+            PRINT "Priority - 1 high, 2 medium, 3 low (blank for 2):"
+            INPUT priTyped
+            VAR priority = 2
+            VAR priText = TRIM(STRING(priTyped))
+            IF LEN(priText) > 0 {
+                IF IS_NUMBER(priText) AND NUMBER(priText) >= 1 AND NUMBER(priText) <= 3 {
+                    priority = NUMBER(priText)
+                } ELSE {
+                    PRINT "Priority must be 1, 2 or 3 - using 2."
+                }
+            }
+            VAR assignedId = nextId(todo)
+            todo = todo.APPEND_ROW(assignedId, title, due, TRIM(STRING(tagsTyped)),
+                                   priority, TODAY_DATE, "active", "")
+            itemCount = todo.ROWS()
+            PRINT "Added #" + assignedId + " " + title + "."
+        }
+    }
+    pauseForReading()
+}
+
+FUNCTION handleComplete() {
+    IF countStatus(todo, "active") == 0 {
+        PRINT "Nothing active to complete."
+    } ELSE {
+        showView(activeView(todo), "Nothing active to complete.")
+        PRINT ""
+        PRINT "Id to mark complete:"
+        INPUT wantedId
+        VAR row = rowOfId(todo, wantedId)
+        IF row == 0 {
+            PRINT "No item has Id " + wantedId + "."
+        } ELSEIF todo.GET(row, "Status") == "done" {
+            PRINT "#" + wantedId + " is already complete."
+        } ELSE {
+            todo = todo.SET(row, "Status", "done")
+            todo = todo.SET(row, "Completed", TODAY_DATE)
+            PRINT "Completed #" + wantedId + " " + todo.GET(row, "Title") + "."
+        }
+    }
+    pauseForReading()
+}
+
+FUNCTION handleReopen() {
+    IF countStatus(todo, "done") == 0 {
+        PRINT "The archive is empty."
+    } ELSE {
+        showView(archiveView(todo), "The archive is empty.")
+        PRINT ""
+        PRINT "Id to reopen:"
+        INPUT wantedId
+        VAR row = rowOfId(todo, wantedId)
+        IF row == 0 {
+            PRINT "No item has Id " + wantedId + "."
+        } ELSEIF todo.GET(row, "Status") == "active" {
+            PRINT "#" + wantedId + " is already active."
+        } ELSE {
+            todo = todo.SET(row, "Status", "active")
+            todo = todo.SET(row, "Completed", "")
+            PRINT "Reopened #" + wantedId + " " + todo.GET(row, "Title") + "."
+        }
+    }
+    pauseForReading()
+}
+
+# Editing leaves a field alone when the answer is blank, so changing one
+# thing does not mean retyping the rest.
+FUNCTION handleEdit() {
+    IF itemCount == 0 {
+        PRINT "Nothing to edit."
+    } ELSE {
+        PRINT "Id to edit:"
+        INPUT wantedId
+        VAR row = rowOfId(todo, wantedId)
+        IF row == 0 {
+            PRINT "No item has Id " + wantedId + "."
+        } ELSE {
+            printItem(todo, row)
+            PRINT ""
+            PRINT "Leave a field blank to keep it as it is."
+            PRINT "New title:"
+            INPUT titleTyped
+            VAR newTitle = TRIM(STRING(titleTyped))
+            IF LEN(newTitle) > 0 {
+                todo = todo.SET(row, "Title", newTitle)
+            }
+            PRINT "New due date (or 'none' to clear it):"
+            INPUT dueTyped
+            VAR dueText = TRIM(STRING(dueTyped))
+            IF LOWER(dueText) == "none" {
+                todo = todo.SET(row, "Due", "")
+            } ELSEIF LEN(dueText) > 0 {
+                VAR due = normalizeDue(dueText)
+                IF due == "?" {
+                    PRINT "Not a date I understand - due date left unchanged."
+                } ELSE {
+                    todo = todo.SET(row, "Due", due)
+                }
+            }
+            PRINT "New tags:"
+            INPUT tagsTyped
+            VAR newTags = TRIM(STRING(tagsTyped))
+            IF LEN(newTags) > 0 {
+                todo = todo.SET(row, "Tags", newTags)
+            }
+            PRINT "New priority (1-3):"
+            INPUT priTyped
+            VAR priText = TRIM(STRING(priTyped))
+            IF LEN(priText) > 0 {
+                IF IS_NUMBER(priText) AND NUMBER(priText) >= 1 AND NUMBER(priText) <= 3 {
+                    todo = todo.SET(row, "Priority", NUMBER(priText))
+                } ELSE {
+                    PRINT "Priority must be 1, 2 or 3 - left unchanged."
+                }
+            }
+            PRINT "Updated #" + wantedId + "."
+        }
+    }
+    pauseForReading()
+}
+
+FUNCTION handleDelete() {
+    IF itemCount == 0 {
+        PRINT "Nothing to delete."
+    } ELSE {
+        PRINT "Id to delete:"
+        INPUT wantedId
+        VAR row = rowOfId(todo, wantedId)
+        IF row == 0 {
+            PRINT "No item has Id " + wantedId + "."
+        } ELSE {
+            PRINT ""
+            printItem(todo, row)
+            PRINT ""
+            IF confirm("Delete this item permanently?") == 1 {
+                VAR goneTitle = todo.GET(row, "Title")
+                todo = todo.DELETE_ROW(row)
+                itemCount = todo.ROWS()
+                PRINT "Deleted " + goneTitle + "."
+            } ELSE {
+                PRINT "Left alone."
+            }
+        }
+    }
+    pauseForReading()
+}
+
+FUNCTION handleShowOne() {
+    PRINT "Id to show:"
+    INPUT wantedId
+    VAR row = rowOfId(todo, wantedId)
+    IF row == 0 {
+        PRINT "No item has Id " + wantedId + "."
+    } ELSE {
+        PRINT ""
+        printItem(todo, row)
+    }
+    pauseForReading()
+}
+
+FUNCTION handleSearch() {
+    PRINT "Text to look for in titles:"
+    INPUT text
+    VAR wanted = TRIM(STRING(text))
+    IF LEN(wanted) == 0 {
+        PRINT "Nothing to search for."
+    } ELSE {
+        showView(searchView(todo, wanted), "No title contains " + wanted + ".")
+    }
+    pauseForReading()
+}
+
+FUNCTION handleFilterByTag() {
+    PRINT "Tag to filter by:"
+    INPUT text
+    VAR wanted = TRIM(STRING(text))
+    IF LEN(wanted) == 0 {
+        PRINT "No tag given."
+    } ELSE {
+        showView(tagView(todo, wanted), "Nothing is tagged " + wanted + ".")
+    }
+    pauseForReading()
+}
+
+FUNCTION handleStats() {
+    VAR active = countStatus(todo, "active")
+    VAR done = countStatus(todo, "done")
+    PRINT "--- Statistics ---"
+    PRINT "Total items:     " + itemCount
+    PRINT "Active:          " + active
+    PRINT "Completed:       " + done
+    PRINT "Overdue:         " + countOverdue(todo)
+    PRINT "Due in 7 days:   " + dueWithinView(todo, 7).ROWS()
+    IF itemCount > 0 {
+        PRINT "Percent done:    " + ROUND(done * 100 / itemCount) + "%"
+    }
+    IF active > 0 {
+        PRINT ""
+        PRINT "Oldest active item:"
+        VAR oldest = 0
+        VAR oldestRow = 0
+        VAR row = 1
+        WHILE row <= todo.ROWS() {
+            IF todo.GET(row, "Status") == "active" {
+                VAR age = DATE_DIFF(todo.GET(row, "Added"), TODAY_DATE)
+                IF oldestRow == 0 OR age > oldest {
+                    oldest = age
+                    oldestRow = row
+                }
+            }
+            row = row + 1
+        }
+        PRINT "  #" + todo.GET(oldestRow, "Id") + " " + todo.GET(oldestRow, "Title") + " - added " + oldest + " day(s) ago"
+    }
+    pauseForReading()
+}
+
+# Uses DATE_DIFF against the Completed stamp, so "older than N days"
+# means what it says rather than "the first N rows".
+FUNCTION handlePurge() {
+    IF countStatus(todo, "done") == 0 {
+        PRINT "The archive is empty - nothing to purge."
+    } ELSE {
+        PRINT "Purge completed items finished more than how many days ago?"
+        INPUT daysTyped
+        IF IS_NUMBER(daysTyped) == 0 {
+            PRINT "That is not a number."
+        } ELSE {
+            VAR cutoff = NUMBER(daysTyped)
+            VAR doomed = 0
+            VAR row = 1
+            WHILE row <= todo.ROWS() {
+                IF todo.GET(row, "Status") == "done" AND LEN(todo.GET(row, "Completed")) > 0 {
+                    IF DATE_DIFF(todo.GET(row, "Completed"), TODAY_DATE) > cutoff {
+                        doomed = doomed + 1
+                    }
+                }
+                row = row + 1
+            }
+            IF doomed == 0 {
+                PRINT "Nothing in the archive is that old."
+            } ELSEIF confirm("Permanently delete " + doomed + " archived item(s)?") == 1 {
+                # Walks backwards: deleting a row renumbers everything
+                # after it, so going forwards would skip the next item
+                # every time one was removed.
+                VAR scan = todo.ROWS()
+                WHILE scan >= 1 {
+                    IF todo.GET(scan, "Status") == "done" AND LEN(todo.GET(scan, "Completed")) > 0 {
+                        IF DATE_DIFF(todo.GET(scan, "Completed"), TODAY_DATE) > cutoff {
+                            todo = todo.DELETE_ROW(scan)
+                        }
+                    }
+                    scan = scan - 1
+                }
+                itemCount = todo.ROWS()
+                PRINT "Purged " + doomed + " item(s)."
+            } ELSE {
+                PRINT "Left alone."
+            }
+        }
+    }
+    pauseForReading()
+}
+
+FUNCTION handleExport() {
+    VAR NEWLINE = "
+"
+    VAR report = "To-Do Report - " + TODAY_DATE + NEWLINE + NEWLINE
+    report = report + "Active" + NEWLINE + activeView(todo) + NEWLINE + NEWLINE
+    report = report + "Archive" + NEWLINE + archiveView(todo) + NEWLINE
+    WRITE_FILE("todo_report.txt", report)
+    PRINT "Wrote todo_report.txt:"
+    PRINT ""
+    PRINT READ_FILE("todo_report.txt")
+    pauseForReading()
+}
+
+FUNCTION handleToggleTrace() {
+    IF traceMode == 1 {
+        traceMode = 0
+        PRINT "TRACE off."
+    } ELSE {
+        traceMode = 1
+        PRINT "TRACE on."
+    }
+    TRACE traceMode
+    pauseForReading()
+}
+
+# Every sort reorders the stored list itself, not just the view, so the
+# order you choose is the order that gets saved.
+FUNCTION sortBy(column, descending, description) {
+    todo = todo.SORT(column, descending)
+    PRINT "Sorted by " + description + "."
+    PRINT ""
+    showView(activeView(todo), "No active items.")
+    pauseForReading()
+}
+
+
+# --- Submenus ----------------------------------------------------------
+
+FUNCTION runViewMenu() {
+    VAR inSubmenu = 1
+    WHILE inSubmenu == 1 {
+        printViewMenu()
+        INPUT choice
+        IF choice == 1 {
+            showView(activeView(todo), "No active items.")
+            pauseForReading()
+        } ELSEIF choice == 2 {
+            IF itemCount == 0 {
+                PRINT "The list is empty."
+            } ELSE {
+                PRINT todo
+            }
+            pauseForReading()
+        } ELSEIF choice == 3 {
+            showView(archiveView(todo), "The archive is empty.")
+            pauseForReading()
+        } ELSEIF choice == 4 {
+            showView(overdueView(todo), "Nothing is overdue.")
+            pauseForReading()
+        } ELSEIF choice == 5 {
+            showView(dueWithinView(todo, 7), "Nothing is due in the next 7 days.")
+            pauseForReading()
+        } ELSEIF choice == 6 {
+            handleSearch()
+        } ELSEIF choice == 7 {
+            handleFilterByTag()
+        } ELSEIF choice == 8 {
+            handleShowOne()
+        } ELSEIF choice == 9 {
+            inSubmenu = 0
+        } ELSE {
+            PRINT "Invalid choice. Please enter a number from 1 to 9."
+            pauseForReading()
+        }
+    }
+}
+
+FUNCTION runChangeMenu() {
+    VAR inSubmenu = 1
+    WHILE inSubmenu == 1 {
+        printChangeMenu()
+        INPUT choice
+        IF choice == 1 {
+            handleComplete()
+        } ELSEIF choice == 2 {
+            handleReopen()
+        } ELSEIF choice == 3 {
+            handleEdit()
+        } ELSEIF choice == 4 {
+            handleDelete()
+        } ELSEIF choice == 5 {
+            inSubmenu = 0
+        } ELSE {
+            PRINT "Invalid choice. Please enter a number from 1 to 5."
+            pauseForReading()
+        }
+    }
+}
+
+FUNCTION runSortMenu() {
+    VAR inSubmenu = 1
+    WHILE inSubmenu == 1 {
+        printSortMenu()
+        INPUT choice
+        IF choice == 1 {
+            sortBy("Due", 0, "due date, earliest first")
+        } ELSEIF choice == 2 {
+            sortBy("Due", 1, "due date, latest first")
+        } ELSEIF choice == 3 {
+            sortBy("Tags", 0, "tag, A to Z")
+        } ELSEIF choice == 4 {
+            sortBy("Tags", 1, "tag, Z to A")
+        } ELSEIF choice == 5 {
+            sortBy("Added", 0, "date added, oldest first")
+        } ELSEIF choice == 6 {
+            sortBy("Added", 1, "date added, newest first")
+        } ELSEIF choice == 7 {
+            sortBy("Priority", 0, "priority, highest first")
+        } ELSEIF choice == 8 {
+            sortBy("Title", 0, "title, A to Z")
+        } ELSEIF choice == 9 {
+            inSubmenu = 0
+        } ELSE {
+            PRINT "Invalid choice. Please enter a number from 1 to 9."
+            pauseForReading()
+        }
+    }
+}
+
+FUNCTION runToolsMenu() {
+    VAR inSubmenu = 1
+    WHILE inSubmenu == 1 {
+        printToolsMenu()
+        INPUT choice
+        IF choice == 1 {
+            handleStats()
+        } ELSEIF choice == 2 {
+            handlePurge()
+        } ELSEIF choice == 3 {
+            handleExport()
+        } ELSEIF choice == 4 {
+            handleToggleTrace()
+        } ELSEIF choice == 5 {
+            inSubmenu = 0
+        } ELSE {
+            PRINT "Invalid choice. Please enter a number from 1 to 5."
+            pauseForReading()
+        }
+    }
+}
+
+
+# --- Main menu loop ----------------------------------------------------
+
+VAR running = 1
+pauseForReading()
+
+WHILE running == 1 {
+    TRY {
+        printMainMenu()
+        INPUT choice
+        IF choice == 1 {
+            runViewMenu()
+        } ELSEIF choice == 2 {
+            handleAdd()
+        } ELSEIF choice == 3 {
+            runChangeMenu()
+        } ELSEIF choice == 4 {
+            runSortMenu()
+        } ELSEIF choice == 5 {
+            runToolsMenu()
+        } ELSEIF choice == 6 {
+            running = 0
+        } ELSE {
+            PRINT "Invalid choice. Please enter a number from 1 to 6."
+            pauseForReading()
+        }
+    } CATCH err {
+        IF INDEX_OF(err, "no more input") != 0 {
+            PRINT ""
+            PRINT "No more input available - saving and exiting."
+            running = 0
+        } ELSE {
+            PRINT "An error occurred: " + err
+            PRINT "Returning to the main menu."
+            pauseForReading()
+        }
+    }
+}
+
+todo.SAVE(TODO_FILE)
+PRINT "Saved " + itemCount + " item(s) to " + TODO_FILE + ". Goodbye!"

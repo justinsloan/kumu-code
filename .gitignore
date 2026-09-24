@@ -8,3 +8,13 @@ kumu
 
 # Remember plugin session history - local tooling state, not project source
 .remember/
+
+# test.kumu writes these while demonstrating file I/O.
+test_output.txt
+test_scores.csv
+
+# todo.kumu generates these on first run. They are deliberately not
+# committed: the starter items are dated relative to TODAY(), so a
+# checked-in copy would arrive stale and show everything as overdue.
+todo.csv
+todo_report.txt

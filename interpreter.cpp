@@ -8,6 +8,8 @@
 #include <random>
 #include <thread>
 #include <chrono>
+#include <ctime>
+#include <iomanip>
 
 namespace kumu {
 
@@ -655,6 +657,99 @@ Value UnaryExpression::evaluate(Context& context) {
 
 namespace {
 
+// --- Dates -----------------------------------------------------------
+//
+// Kumu has no Date type, on purpose: a date is an ordinary String in ISO
+// YYYY-MM-DD form. That single choice means dates already sort
+// chronologically under SORT, already compare correctly with < and >, and
+// already survive a CSV round trip as text -- none of which a new value type
+// would get for free, and all of which a learner already understands.
+//
+// The arithmetic goes through a day count rather than mktime. mktime applies
+// the local timezone and DST, so "add one day" across a DST boundary can land
+// on the same date or skip one. An integer day count has neither problem.
+
+struct CivilDate {
+    long long year;
+    int month;
+    int day;
+};
+
+bool isLeapYear(long long y) {
+    return (y % 4 == 0 && y % 100 != 0) || y % 400 == 0;
+}
+
+int daysInMonth(long long y, int m) {
+    static const int lengths[] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+    if (m == 2 && isLeapYear(y)) return 29;
+    return lengths[m - 1];
+}
+
+// Strict on purpose: exactly ten characters, digits where digits belong, and a
+// day that really exists in that month. "2026-1-1" and "2026-02-30" are both
+// rejected -- quietly accepting either is the kind of silent wrongness that
+// leaves a learner with nothing to pull on.
+bool parseIsoDate(const std::string& s, CivilDate& out) {
+    if (s.size() != 10) return false;
+    if (s[4] != '-' || s[7] != '-') return false;
+    const int digitPositions[] = {0, 1, 2, 3, 5, 6, 8, 9};
+    for (int i : digitPositions) {
+        if (!std::isdigit(static_cast<unsigned char>(s[i]))) return false;
+    }
+    long long y = std::stoll(s.substr(0, 4));
+    int m = std::stoi(s.substr(5, 2));
+    int d = std::stoi(s.substr(8, 2));
+    if (m < 1 || m > 12) return false;
+    if (d < 1 || d > daysInMonth(y, m)) return false;
+    out = CivilDate{y, m, d};
+    return true;
+}
+
+// days_from_civil / civil_from_days: days relative to 1970-01-01 in the
+// proleptic Gregorian calendar, by exact integer arithmetic.
+long long daysFromCivil(const CivilDate& c) {
+    long long y = c.year;
+    y -= c.month <= 2;
+    const long long era = (y >= 0 ? y : y - 399) / 400;
+    const unsigned yoe = static_cast<unsigned>(y - era * 400);
+    const unsigned doy = static_cast<unsigned>(
+        (153 * (c.month + (c.month > 2 ? -3 : 9)) + 2) / 5 + c.day - 1);
+    const unsigned doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    return era * 146097 + static_cast<long long>(doe) - 719468;
+}
+
+CivilDate civilFromDays(long long z) {
+    z += 719468;
+    const long long era = (z >= 0 ? z : z - 146096) / 146097;
+    const unsigned doe = static_cast<unsigned>(z - era * 146097);
+    const unsigned yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    const long long y = static_cast<long long>(yoe) + era * 400;
+    const unsigned doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    const unsigned mp = (5 * doy + 2) / 153;
+    const unsigned d = doy - (153 * mp + 2) / 5 + 1;
+    const unsigned m = mp + (mp < 10 ? 3 : -9);
+    return CivilDate{y + (m <= 2), static_cast<int>(m), static_cast<int>(d)};
+}
+
+std::string formatIsoDate(const CivilDate& c) {
+    std::ostringstream out;
+    out << std::setfill('0') << std::setw(4) << c.year << '-'
+        << std::setw(2) << c.month << '-' << std::setw(2) << c.day;
+    return out.str();
+}
+
+CivilDate requireDate(const Value& v, const std::string& context) {
+    if (!is_string(v)) {
+        throw std::runtime_error(context + " requires a date written as YYYY-MM-DD (e.g. 2026-09-23)");
+    }
+    CivilDate c;
+    if (!parseIsoDate(as_string(v), c)) {
+        throw std::runtime_error(context + ": '" + as_string(v) +
+                                  "' is not a valid date -- dates are written as YYYY-MM-DD (e.g. 2026-09-23)");
+    }
+    return c;
+}
+
 Value evaluateBuiltin(const std::string& name,
                        const std::vector<std::unique_ptr<Expression>>& args,
                        Context& context) {
@@ -922,6 +1017,76 @@ Value evaluateBuiltin(const std::string& name,
         return make_list(std::move(parts));
     }
 
+    if (name == "TODAY" || name == "NOW") {
+        if (!args.empty()) throw std::runtime_error(name + " expects no arguments");
+        std::time_t t = std::time(nullptr);
+        std::tm local{};
+#ifdef _WIN32
+        localtime_s(&local, &t);
+#else
+        localtime_r(&t, &local);
+#endif
+        char buf[32];
+        const char* fmt = (name == "TODAY") ? "%Y-%m-%d" : "%Y-%m-%d %H:%M:%S";
+        std::strftime(buf, sizeof(buf), fmt, &local);
+        return std::string(buf);
+    }
+
+    // The non-throwing guard, used exactly as IS_NUMBER guards NUMBER.
+    if (name == "IS_DATE") {
+        if (args.size() != 1) throw std::runtime_error("IS_DATE expects 1 argument (date)");
+        Value v = args[0]->evaluate(context);
+        if (!is_string(v)) return 0.0;
+        CivilDate parsed;
+        return parseIsoDate(as_string(v), parsed) ? 1.0 : 0.0;
+    }
+
+    if (name == "DATE_DIFF") {
+        if (args.size() != 2) throw std::runtime_error("DATE_DIFF expects 2 arguments (from, to)");
+        CivilDate from = requireDate(args[0]->evaluate(context), "DATE_DIFF from");
+        CivilDate to = requireDate(args[1]->evaluate(context), "DATE_DIFF to");
+        return static_cast<double>(daysFromCivil(to) - daysFromCivil(from));
+    }
+
+    if (name == "DATE_ADD") {
+        if (args.size() != 2) throw std::runtime_error("DATE_ADD expects 2 arguments (date, days)");
+        CivilDate base = requireDate(args[0]->evaluate(context), "DATE_ADD date");
+        double daysD = requireNumber(args[1]->evaluate(context), "DATE_ADD days");
+        // Guarded before the cast for the reason RANDOM's bounds are: a value
+        // outside long long's range converts to something unspecified, and the
+        // wrong date would come back with no error at all.
+        if (!std::isfinite(daysD) || std::fabs(daysD) > 1e15) {
+            throw std::runtime_error("DATE_ADD: days must be a whole number no larger than 1e15");
+        }
+        if (daysD != std::floor(daysD)) {
+            throw std::runtime_error("DATE_ADD: days must be a whole number, not " + numberToString(daysD));
+        }
+        CivilDate result = civilFromDays(daysFromCivil(base) + static_cast<long long>(daysD));
+        if (result.year < 1 || result.year > 9999) {
+            throw std::runtime_error("DATE_ADD: the result falls outside the years 1-9999");
+        }
+        return formatIsoDate(result);
+    }
+
+    if (name == "WEEKDAY") {
+        if (args.size() != 1) throw std::runtime_error("WEEKDAY expects 1 argument (date)");
+        CivilDate c = requireDate(args[0]->evaluate(context), "WEEKDAY");
+        // 1970-01-01 was a Thursday. The + 11 (rather than + 4) keeps the
+        // result non-negative for dates before 1970, where z % 7 is negative.
+        long long dow = ((daysFromCivil(c) % 7) + 11) % 7;
+        static const char* const dayNames[] = {"Sunday", "Monday", "Tuesday", "Wednesday",
+                                                "Thursday", "Friday", "Saturday"};
+        return std::string(dayNames[dow]);
+    }
+
+    if (name == "YEAR" || name == "MONTH" || name == "DAY") {
+        if (args.size() != 1) throw std::runtime_error(name + " expects 1 argument (date)");
+        CivilDate c = requireDate(args[0]->evaluate(context), name);
+        if (name == "YEAR") return static_cast<double>(c.year);
+        if (name == "MONTH") return static_cast<double>(c.month);
+        return static_cast<double>(c.day);
+    }
+
     throw std::runtime_error("Undefined function: " + name); // sentinel: not a builtin
 }
 
@@ -931,7 +1096,9 @@ const char* const kBuiltinNames[] = {"READ_FILE", "WRITE_FILE", "READ_CSV",
                                       "ABS", "FLOOR", "ROUND", "SQRT", "POW",
                                       "IS_NUMBER", "NUMBER", "STRING",
                                       "TRIM", "REPLACE", "CONTAINS", "STARTS_WITH", "ENDS_WITH",
-                                      "SPLIT"};
+                                      "SPLIT",
+                                      "TODAY", "NOW", "IS_DATE", "DATE_DIFF", "DATE_ADD",
+                                      "WEEKDAY", "YEAR", "MONTH", "DAY"};
 
 bool isBuiltin(const std::string& name) {
     for (const char* b : kBuiltinNames) {
@@ -1188,7 +1355,14 @@ Value evaluateListMethod(const std::string& method,
     }
 
     if (method == "SORT") {
-        if (!args.empty()) throw std::runtime_error("SORT expects no arguments");
+        // The optional argument sorts descending, spelled the same way as
+        // Matrix.SORT's -- the two collections should not disagree about how
+        // to say one thing. .SORT().REVERSE() keeps working too.
+        if (args.size() > 1) throw std::runtime_error("SORT expects no arguments, or 1 (descending)");
+        bool descending = false;
+        if (args.size() == 1) {
+            descending = requireNumber(args[0]->evaluate(context), "SORT descending") != 0.0;
+        }
         // Same auto-detection Matrix.SORT uses: numeric when every item reads
         // as a number, otherwise ordinary text order.
         bool allNumeric = true;
@@ -1200,14 +1374,16 @@ Value evaluateListMethod(const std::string& method,
             break;
         }
         std::vector<Value> items = l.items;
-        std::sort(items.begin(), items.end(), [allNumeric](const Value& a, const Value& b) {
+        std::sort(items.begin(), items.end(), [allNumeric, descending](const Value& a, const Value& b) {
+            const Value& lhs = descending ? b : a;
+            const Value& rhs = descending ? a : b;
             if (allNumeric) {
                 double da = 0.0, db = 0.0;
-                if (is_number(a)) da = as_number(a); else tryParseNumber(as_string(a), da);
-                if (is_number(b)) db = as_number(b); else tryParseNumber(as_string(b), db);
+                if (is_number(lhs)) da = as_number(lhs); else tryParseNumber(as_string(lhs), da);
+                if (is_number(rhs)) db = as_number(rhs); else tryParseNumber(as_string(rhs), db);
                 return numberLess(da, db);
             }
-            return toDisplayString(a) < toDisplayString(b);
+            return toDisplayString(lhs) < toDisplayString(rhs);
         });
         return make_list(std::move(items));
     }
@@ -1401,9 +1577,17 @@ Value MethodCallExpression::evaluate(Context& context) {
     }
 
     if (method == "SORT") {
-        if (args.size() != 1) throw std::runtime_error("SORT expects 1 argument (column)");
+        // The optional second argument sorts descending, following the same
+        // shape as FIND's optional ignoreCase.
+        if (args.size() != 1 && args.size() != 2) {
+            throw std::runtime_error("SORT expects 1 or 2 arguments (column, descending)");
+        }
         Value colSel = args[0]->evaluate(context);
         size_t col = resolveColumn(m, colSel);
+        bool descending = false;
+        if (args.size() == 2) {
+            descending = requireNumber(args[1]->evaluate(context), "SORT descending") != 0.0;
+        }
         // Auto-detect: numeric sort if every data-row cell in this column
         // parses as a number, otherwise lexicographic (string) sort -- so
         // the caller never has to say which kind of comparison they want.
@@ -1414,9 +1598,14 @@ Value MethodCallExpression::evaluate(Context& context) {
         }
         std::vector<std::vector<std::string>> dataRows(m.data.begin() + 1, m.data.end());
         std::sort(dataRows.begin(), dataRows.end(),
-                  [col, allNumeric](const std::vector<std::string>& a, const std::vector<std::string>& b) {
-            std::string ca = (col - 1 < a.size()) ? a[col - 1] : std::string();
-            std::string cb = (col - 1 < b.size()) ? b[col - 1] : std::string();
+                  [col, allNumeric, descending](const std::vector<std::string>& a, const std::vector<std::string>& b) {
+            // Descending swaps the operands rather than negating the result:
+            // negating would report a == b as a < b and break the strict weak
+            // ordering std::sort requires.
+            const std::vector<std::string>& lhs = descending ? b : a;
+            const std::vector<std::string>& rhs = descending ? a : b;
+            std::string ca = (col - 1 < lhs.size()) ? lhs[col - 1] : std::string();
+            std::string cb = (col - 1 < rhs.size()) ? rhs[col - 1] : std::string();
             if (allNumeric) {
                 double da = 0.0, db = 0.0;
                 tryParseNumber(ca, da);

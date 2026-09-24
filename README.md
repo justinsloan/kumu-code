@@ -109,8 +109,10 @@ mean 'LEN'?"). Nothing fails silently — a stray `%` or `;` is reported, not sk
 and `TRY` / `CATCH` for error handling.
 
 **Built-ins** — string functions (`LEN`, `SUBSTRING`, `SPLIT`, `REPLACE`, `TRIM`,
-`UPPER`/`LOWER`, `CONTAINS`, `INDEX_OF`, …), console control (`INPUT`, `CLEAR_SCREEN`,
-`SLEEP`), `RANDOM`, and a `TRACE` statement for watching execution step by step.
+`UPPER`/`LOWER`, `CONTAINS`, `INDEX_OF`, …), dates (`TODAY`, `NOW`, `DATE_DIFF`,
+`DATE_ADD`, `WEEKDAY`, `YEAR`/`MONTH`/`DAY`, guarded by `IS_DATE`), console control
+(`INPUT`, `CLEAR_SCREEN`, `SLEEP`), `RANDOM`, and a `TRACE` statement for watching
+execution step by step.
 
 **File I/O** — `READ_FILE` / `WRITE_FILE` for plain text, `READ_CSV` and `.SAVE()` for
 CSV, and `FILE_EXISTS` for first-run setup.
@@ -147,6 +149,7 @@ Both documents are published, rendered and searchable, at
 
 | Program | What it shows |
 | :--- | :--- |
+| [`todo.kumu`](todo.kumu) | A complete to-do manager — due dates, tags, priorities, completion and an archive, sorted any way you like and persisted to `todo.csv`. The largest program here. |
 | [`address.kumu`](address.kumu) | The flagship example — an interactive address book using essentially every feature together. Contacts persist to `contacts.csv`, the book is a live Matrix with header-aware dot-methods, and `TRY`/`CATCH` turns end-of-input into a graceful save-and-exit. |
 | [`collections.kumu`](collections.kumu) | Matrix vs. List — when you want a table and when you want a sequence, using a gradebook as the worked example. |
 | [`test.kumu`](test.kumu) | A broad feature sweep, useful as a syntax reference by example. |

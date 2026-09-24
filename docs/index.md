@@ -85,6 +85,7 @@ The repository ships four programs you can read and run:
 
 | Program | What it shows |
 | :--- | :--- |
+| [`todo.kumu`](https://github.com/justinsloan/kumu-code/blob/main/todo.kumu) | A complete to-do manager — due dates, tags, priorities, completion and an archive, sorted any way you like and persisted to `todo.csv`. The largest program here. |
 | [`address.kumu`](https://github.com/justinsloan/kumu-code/blob/main/address.kumu) | The flagship example — an interactive address book using essentially every feature together, persisting contacts to a CSV file. |
 | [`collections.kumu`](https://github.com/justinsloan/kumu-code/blob/main/collections.kumu) | Matrix vs. List: when you want a table and when you want a sequence. |
 | [`test.kumu`](https://github.com/justinsloan/kumu-code/blob/main/test.kumu) | A broad feature sweep, useful as a syntax reference by example. |

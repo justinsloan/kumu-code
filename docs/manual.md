@@ -173,6 +173,48 @@ IF IS_NUMBER(age) {
 PRINT RANDOM(1, 6)   # roll a die
 ```
 
+### Dates
+**There is no Date type.** A date is an ordinary String written `YYYY-MM-DD`, and that is the whole design. Because the year comes first and every part is zero-padded, sorting dates as *text* already puts them in chronological order, and `<` and `>` already compare them correctly -- so `.SORT("Due")` and `IF dueDate < TODAY()` both do the obvious thing with no special machinery. A date also survives a CSV round trip as plain text, because that is all it ever was.
+
+- **TODAY()**: Today's date, as `"2026-09-23"`. No arguments.
+- **NOW()**: The current date and time, as `"2026-09-23 21:12:45"`. No arguments.
+- **IS_DATE(value)**: `1` if `value` is text holding a real calendar date in `YYYY-MM-DD` form, else `0`. This is the guard that `NUMBER` has in `IS_NUMBER`: every other date function is a runtime error on bad input, so check first.
+- **DATE_DIFF(from, to)**: Whole days from `from` to `to`. Negative when `to` is the earlier of the two.
+- **DATE_ADD(date, days)**: The date `days` later. A negative `days` moves backwards. `days` must be a whole number.
+- **WEEKDAY(date)**: The day's name, as `"Wednesday"`.
+- **YEAR(date)** / **MONTH(date)** / **DAY(date)**: That part of the date, as a Number.
+
+```basic
+PRINT TODAY()                                  # 2026-09-23
+PRINT WEEKDAY("2026-09-23")                    # Wednesday
+PRINT DATE_ADD("2026-09-23", 7)                # 2026-09-30
+PRINT DATE_ADD("2026-01-01", -1)               # 2025-12-31
+PRINT DATE_DIFF("2026-09-23", "2026-09-30")    # 7
+PRINT DATE_DIFF("2026-09-30", "2026-09-23")    # -7
+PRINT MONTH("2026-09-23")                      # 9
+```
+
+`IS_DATE` is strict about what a date looks like, and deliberately so -- a date that is *almost* right is the kind of mistake that otherwise shows up weeks later as a wrong answer with no error attached:
+
+```basic
+PRINT IS_DATE("2026-02-28")   # 1
+PRINT IS_DATE("2024-02-29")   # 1, 2024 is a leap year
+PRINT IS_DATE("2026-02-29")   # 0, 2026 is not
+PRINT IS_DATE("2026-02-30")   # 0, no February has 30 days
+PRINT IS_DATE("2026-13-01")   # 0, there is no month 13
+PRINT IS_DATE("2026-1-1")     # 0, months and days need two digits
+```
+
+Anything else is a runtime error naming the format:
+<!-- check
+PRINT DATE_DIFF("2026-13-01", "2026-01-01")
+-->
+```
+Runtime Error: DATE_DIFF from: '2026-13-01' is not a valid date -- dates are written as YYYY-MM-DD (e.g. 2026-09-23) (line 1)
+```
+
+Two things worth knowing. `TODAY()` and `NOW()` change from day to day, so a program that prints them cannot have its output compared against a fixed expected result -- the same caution `RANDOM` needs. And an *empty* cell is not a date at all: in a sorted column, blanks come before every real date ascending, and after them descending.
+
 ---
 
 ## 4. Statements
@@ -542,7 +584,7 @@ As with Matrix, **no method changes the List it was called on** -- each returns 
 - **.REMOVE(position)**: A copy without the item at `position`.
 - **.CONTAINS(value)**: `1` if the list holds `value`, else `0`.
 - **.INDEX_OF(value)**: The 1-based position of the first match, or `0` if there is none -- the same "0 means not found" convention as the string `INDEX_OF`.
-- **.SORT()**: A sorted copy. Numeric order when every item reads as a number, otherwise text order -- the same auto-detection `Matrix.SORT` uses.
+- **.SORT(descending)**: A sorted copy. Numeric order when every item reads as a number, otherwise text order -- the same auto-detection `Matrix.SORT` uses. `descending` is optional and defaults to off; pass `1` to reverse the order, exactly as `Matrix.SORT` does. `.SORT().REVERSE()` gets you the same result the long way.
 - **.REVERSE()**: A reversed copy.
 - **.SLICE(start, length)**: A copy of `length` items starting at `start`. `length` is clamped to what's actually left.
 - **.JOIN(separator)**: All the items glued into one String. The inverse of `SPLIT`.
@@ -553,6 +595,7 @@ VAR scores = [95, 88, 72]
 PRINT scores.SUM()                  # 255
 PRINT scores.AVERAGE()              # 85
 PRINT scores.SORT()                 # [72, 88, 95]
+PRINT scores.SORT(1)                # [95, 88, 72]
 PRINT scores.APPEND(60)             # [95, 88, 72, 60] -- a new list; .SORT() above
                                     #                    didn't change `scores` either
 PRINT scores                        # [95, 88, 72]     -- the original, unchanged
@@ -636,13 +679,14 @@ PRINT prices.COUNT("Price")      # 1 -- "N/A" is skipped, not an error
 
 ### Searching and Sorting
 - **.FIND(col, value, ignoreCase)**: The 1-based data-row index of the first match in `col`, or `0` if none. Matching compares as text, so `.FIND("Score", 95)` matches a cell holding `"95"`. `ignoreCase` is optional and defaults to off; pass `1` to match regardless of capitalisation, which is usually what you want for names typed by a person.
-- **.SORT(col)**: A new Matrix with its data rows sorted ascending by `col`. Auto-detects the comparison: numeric if every cell in that column parses as a number, lexicographic (string) otherwise -- there's no flag to choose, and no descending option.
+- **.SORT(col, descending)**: A new Matrix with its data rows sorted by `col`. Auto-detects the *comparison*: numeric if every cell in that column parses as a number, lexicographic (string) otherwise -- there's no flag to choose that. `descending` is optional and defaults to off; pass `1` to reverse the order. An empty cell sorts before every other value, so blanks lead ascending and trail descending.
 
 ```basic
 PRINT scores.FIND("Name", "Bob")     # 2
 PRINT scores.FIND("Name", "bob")     # 0 -- case matters by default
 PRINT scores.FIND("Name", "bob", 1)  # 2 -- unless you say otherwise
 VAR sorted = scores.SORT("Score")    # ascending by Score
+VAR worst  = scores.SORT("Score", 1) # descending by Score
 ```
 
 ### Saving to CSV

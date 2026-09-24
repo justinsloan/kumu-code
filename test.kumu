@@ -175,4 +175,68 @@ SLEEP(0.2)
 CLEAR_SCREEN()
 PRINT "Screen cleared. CLEAR_SCREEN() and SLEEP() both work."
 
+PRINT "=== Dates ==="
+# TODAY() and NOW() are deliberately not printed: their output changes
+# from day to day, which would make this file impossible to diff against
+# a saved expectation. Everything below is a fixed date with a known
+# answer.
+PRINT "Weekday of 2026-09-23:      " + WEEKDAY("2026-09-23")
+PRINT "Seven days on:              " + DATE_ADD("2026-09-23", 7)
+PRINT "One day before 2026-01-01:  " + DATE_ADD("2026-01-01", -1)
+PRINT "Days from 23rd to 30th:     " + DATE_DIFF("2026-09-23", "2026-09-30")
+PRINT "...and backwards:           " + DATE_DIFF("2026-09-30", "2026-09-23")
+PRINT "Parts of 2026-09-23:        " + YEAR("2026-09-23") + " / " + MONTH("2026-09-23") + " / " + DAY("2026-09-23")
+
+PRINT "--- leap years ---"
+PRINT "2024-02-28 plus a day:      " + DATE_ADD("2024-02-28", 1)
+PRINT "2026-02-28 plus a day:      " + DATE_ADD("2026-02-28", 1)
+PRINT "Feb to Mar 2024 (leap):     " + DATE_DIFF("2024-02-28", "2024-03-01")
+PRINT "Feb to Mar 2026 (not):      " + DATE_DIFF("2026-02-28", "2026-03-01")
+PRINT "A century of days:          " + DATE_DIFF("1900-01-01", "2000-01-01")
+
+PRINT "--- month and year ends ---"
+PRINT "2026-12-31 plus a day:      " + DATE_ADD("2026-12-31", 1)
+PRINT "There and back again:       " + DATE_ADD(DATE_ADD("2026-09-23", 500), -500)
+
+PRINT "--- IS_DATE is strict ---"
+PRINT "2026-02-28 (real):          " + IS_DATE("2026-02-28")
+PRINT "2024-02-29 (leap year):     " + IS_DATE("2024-02-29")
+PRINT "2026-02-29 (not leap):      " + IS_DATE("2026-02-29")
+PRINT "2026-02-30 (no such day):   " + IS_DATE("2026-02-30")
+PRINT "2026-13-01 (no such month): " + IS_DATE("2026-13-01")
+PRINT "2026-1-1 (needs padding):   " + IS_DATE("2026-1-1")
+PRINT "26-01-01 (needs 4 digits):  " + IS_DATE("26-01-01")
+PRINT "not a date at all:          " + IS_DATE("tomorrow")
+
+PRINT "--- a bad date is an error, not a wrong answer ---"
+TRY {
+    PRINT DATE_ADD("2026-02-30", 1)
+} CATCH err {
+    PRINT "Caught: " + err
+}
+
+PRINT "--- ISO dates sort chronologically as plain text ---"
+VAR dates = ["2026-12-31", "2026-01-05", "2026-09-23"]
+PRINT "Ascending:  " + dates.SORT().JOIN(", ")
+PRINT "Descending: " + dates.SORT(1).JOIN(", ")
+
+PRINT "=== Sorting, ascending and descending ==="
+VAR nums = [5, 2, 9, 1]
+PRINT "Numbers up:   " + nums.SORT().JOIN(", ")
+PRINT "Numbers down: " + nums.SORT(1).JOIN(", ")
+VAR words = ["pear", "apple", "fig"]
+PRINT "Words up:     " + words.SORT().JOIN(", ")
+PRINT "Words down:   " + words.SORT(1).JOIN(", ")
+
+VAR tasks = (
+    ("Task", "Due"),
+    ("write", "2026-10-01"),
+    ("call", "2026-09-25"),
+    ("ship", "2026-12-31")
+)
+PRINT "By due date, earliest first:"
+PRINT tasks.SORT("Due")
+PRINT "By due date, latest first:"
+PRINT tasks.SORT("Due", 1)
+
 PRINT "=== All tests completed ==="
