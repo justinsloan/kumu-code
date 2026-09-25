@@ -2240,9 +2240,32 @@ PRINT RANDOM(1, 6)
 **A negative `SLEEP`.** An error — you can't pause for less than no time.
 
 **Clearing before the user has read anything.** `CLEAR_SCREEN` erases what was
-there. Pair it with a `SLEEP`, or a "press Enter" `INPUT`, or the user sees a
-flash of something they can't read. `address.kumu` wraps exactly this pattern in
-a `pauseForReading()` helper.
+there, so a result printed just before one is a flash of something nobody can
+read. You need to hold the screen first, and there are two ways: a `SLEEP`, or
+an `INPUT` that waits for Enter. Both `address.kumu` and `todo.kumu` wrap that
+choice in a `pauseForReading()` helper, so the decision is made once instead of
+at the fifteen and twenty-six places that respectively need it.
+
+Which of the two you want depends on something easy to miss: **how long the
+thing on screen takes to read.** A one-line confirmation is fine on a timer. A
+table is not — a list of twenty items needs longer than a list of two, and no
+fixed number of seconds is right for both. Worse, a timed pause is wrong in both
+directions at once: too short and the reader loses the output, too long and they
+sit waiting for a program that has already finished. Both example programs use
+the `INPUT` form for exactly this reason:
+
+```kumu
+FUNCTION pauseForReading() {
+    PRINT ""
+    PRINT "Press Enter to continue..."
+    INPUT dismissed
+}
+```
+
+That hands the timing to the person doing the reading, which is the only one who
+knows. The cost is that the pause can now fail the way any `INPUT` fails, when
+input runs out — which is why both programs reach it from inside a `TRY`, and
+treat end-of-input there as a cue to save and exit rather than an error.
 
 **Expecting `SLEEP` to be exact.** It's "at least this long", not a guarantee.
 
@@ -3277,7 +3300,7 @@ This book covers every keyword and built-in function Kumu has, but a few larger,
 
 - **`test.kumu`** exercises every language feature in one file — a good file to skim when you want a reminder of exact syntax.
 - **`collections.kumu`** is a guided tour of the two collection types working together: a gradebook Matrix for storage, Lists for the arithmetic, `FOR EACH` as the bridge between them, and a CSV round trip at the end. Read it after Chapters 13 and 14.
-- **`address.kumu`** is the primary, flagship example of what Kumu programs look like in practice: a real, persistent, menu-driven address book with a two-level menu (Manage Contacts / Tools, both using `ELSEIF` for a flat, readable dispatch), a clean `CLEAR_SCREEN`-refreshed screen with `SLEEP`-paced pauses so results stay readable, an exported text report alongside its CSV persistence, and a `.COLS()` sanity check on the data it loads. It has a "sort contacts alphabetically" tool built on `.SORT`, recovers gracefully from running out of input at any menu depth, and is the largest example in this book of everything working together at once. One piece worth studying: its contact search is case-insensitive, and hand-rolls the lookup to get that. `.FIND` can now do it directly with its optional third argument — `book.FIND("Name", typed, 1)` — so rewriting that helper is a good first exercise in reading someone else's code and simplifying it.
+- **`address.kumu`** is the primary, flagship example of what Kumu programs look like in practice: a real, persistent, menu-driven address book with a two-level menu (Manage Contacts / Tools, both using `ELSEIF` for a flat, readable dispatch), a clean `CLEAR_SCREEN`-refreshed screen with a `pauseForReading()` helper that waits for Enter, so results stay up until they have been read, an exported text report alongside its CSV persistence, and a `.COLS()` sanity check on the data it loads. It has a "sort contacts alphabetically" tool built on `.SORT`, recovers gracefully from running out of input at any menu depth, and is the largest example in this book of everything working together at once. One piece worth studying: its contact search is case-insensitive, and hand-rolls the lookup to get that. `.FIND` can now do it directly with its optional third argument — `book.FIND("Name", typed, 1)` — so rewriting that helper is a good first exercise in reading someone else's code and simplifying it.
 - **`todo.kumu`** is the largest program in the project, and the one that uses this chapter's dates in anger: a to-do list with optional due dates and tags, priorities, completion that archives an item in place rather than deleting it, and views that work out what's overdue or due this week every time you look. Two decisions in it are worth the read. Items are addressed by a stable `Id` rather than by row number, because sorting rewrites the row order and "complete number 3" would otherwise mean different things before and after a sort. And priority is stored as `1`, `2`, `3` rather than `"high"`, `"med"`, `"low"`, so that `.SORT` sees a numeric column — sorting the words would give you `high, low, med`, which is alphabetical and useless. Read it after this chapter.
 
 A few exercises to try on your own:

@@ -37,9 +37,9 @@
 # private copy, with no risk of one clobbering the other's.
 #
 # CLEAR_SCREEN() opens every menu, so the app always shows a clean screen
-# instead of endless scrollback; pauseForReading() (a thin wrapper around
-# SLEEP) runs after every action, so a result has a moment on screen
-# before the next CLEAR_SCREEN would otherwise wipe it away unread.
+# instead of endless scrollback; pauseForReading() runs after every
+# action and waits for Enter, so a result stays up until it has actually
+# been read rather than until a timer expires.
 #
 # Menu actions are zero-argument FUNCTIONs that read and write the
 # global `book`/`contactCount`/`traceMode` variables directly rather than
@@ -140,9 +140,20 @@ FUNCTION printContactsWithPrefix(book, prefix) {
     RETURN found
 }
 
-# Gives a result a moment on screen before the next CLEAR_SCREEN wipes it.
+# Holds the screen until the reader says they are done with it.
+#
+# This waits for Enter rather than sleeping. A timed pause cannot work
+# here: the next menu opens with CLEAR_SCREEN, so a result would appear
+# and then vanish whether or not it had been read, and a full contact
+# list needs longer on screen than a one-line confirmation.
+#
+# Running out of input raises an error here, exactly as it would at any
+# other INPUT. That is deliberate -- it reaches the main loop's CATCH
+# and becomes a clean save-and-exit.
 FUNCTION pauseForReading() {
-    SLEEP(2)
+    PRINT ""
+    PRINT "Press Enter to continue..."
+    INPUT dismissed
 }
 
 # --- Menu screens (each opens with a clean screen) ----------------------
@@ -357,7 +368,18 @@ FUNCTION runToolsMenu() {
 
 VAR running = 1
 VAR traceMode = 0
-pauseForReading()
+
+# The one pause outside the main loop, so it carries its own TRY. It was
+# safe unguarded while it slept; now that it waits for a keypress it can
+# fail like any other INPUT, and input that runs out here means there was
+# never any to begin with.
+TRY {
+    pauseForReading()
+} CATCH err {
+    PRINT ""
+    PRINT "No input available - saving and exiting."
+    running = 0
+}
 
 WHILE running == 1 {
     TRY {
