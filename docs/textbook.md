@@ -65,8 +65,9 @@ where being wrong is far more informative than being right.
 12. [Console Control: CLEAR_SCREEN and SLEEP](#chapter-12-console-control-clear_screen-and-sleep)
 13. [Lists](#chapter-13-lists)
 14. [Files and Matrices](#chapter-14-files-and-matrices)
-15. [Comments](#chapter-15-comments)
-16. [Putting It Together — A Guessing Game](#chapter-16-putting-it-together--a-guessing-game)
+15. [Working with Dates](#chapter-15-working-with-dates)
+16. [Comments](#chapter-16-comments)
+17. [Putting It Together — A Guessing Game](#chapter-17-putting-it-together--a-guessing-game)
 
 [Where to Go From Here](#where-to-go-from-here)
 
@@ -1524,7 +1525,7 @@ Output:
 
 `addToTotal` never declares its own `total`, so its bare assignment reaches
 straight through to the global one. This is used constantly later in this book —
-the guessing game in Chapter 16, and `address.kumu`'s menu handlers, are full of
+the guessing game in Chapter 17, and `address.kumu`'s menu handlers, are full of
 zero-parameter functions that change shared state this way. It's a deliberate
 design, not a workaround.
 
@@ -1901,7 +1902,7 @@ Error: Division by zero (line 3)
 0
 ```
 
-`err` is bound to the error's message as a String, including the line where it happened — scoped the same way a `VAR` would be (Chapter 7): local to `safeDivide` here, so it disappears once the call returns rather than lingering as a global. Notice that `RETURN 0` inside the `CATCH` still works exactly like a normal `RETURN` — it exits `safeDivide` itself, not just the `TRY` block. This is the tool that finally makes Chapter 5's `INPUT`-can-crash problem solvable: wrap the `INPUT` in a `TRY`, and a `CATCH` can respond to "no more input" without the whole program going down. The number-guessing game in Chapter 16 does exactly that.
+`err` is bound to the error's message as a String, including the line where it happened — scoped the same way a `VAR` would be (Chapter 7): local to `safeDivide` here, so it disappears once the call returns rather than lingering as a global. Notice that `RETURN 0` inside the `CATCH` still works exactly like a normal `RETURN` — it exits `safeDivide` itself, not just the `TRY` block. This is the tool that finally makes Chapter 5's `INPUT`-can-crash problem solvable: wrap the `INPUT` in a `TRY`, and a `CATCH` can respond to "no more input" without the whole program going down. The number-guessing game in Chapter 17 does exactly that.
 
 
 ### Common mistakes
@@ -2183,7 +2184,7 @@ PRINT RANDOM(10, 1)
 
 `RANDOM(min, max)` gives a random whole number, with both ends included and
 `min <= max` required. It's what makes games and simulations possible, and
-Chapter 16 builds a whole one on it.
+Chapter 17 builds a whole one on it.
 
 ---
 
@@ -2402,6 +2403,23 @@ Output:
 ```
 
 Notice that strings print with quotes when they're inside a list. That's deliberate: inside a list, quotes are the only thing separating the number `1` from the text `"1"`.
+
+`.SORT()` goes smallest-first. Pass it a `1` to go the other way:
+
+```kumu
+VAR scores = [72, 95, 88]
+PRINT scores.SORT()
+PRINT scores.SORT(1)
+```
+
+Output:
+```
+[72, 88, 95]
+[95, 88, 72]
+```
+
+`.SORT().REVERSE()` gets you the same answer the long way round, and reads
+just as well — use whichever says more clearly what you meant.
 
 ### Lists and text
 
@@ -2636,8 +2654,8 @@ Output:
 ```
 Name | Grade
 ---- | -----
-Ann  | A
-Ben  | B
+Ann  | A    
+Ben  | B    
 ```
 
 The round trip is faithful even when the data itself contains the characters CSV uses as punctuation. A cell holding a comma — `"Smith, Jr."` — is written wrapped in quotes so that reading it back gives you one cell again, not two. The same goes for a cell containing a quote or a line break. You don't have to do anything to get this; it's worth knowing only so you can trust that what you save is what you load, and so the file you open in a spreadsheet looks the way you expect.
@@ -2684,7 +2702,7 @@ Output:
 Caught: SUM: row 2, column 2 ('N/A') is not a number (line 9)
 ```
 
-Two more round out the set: `.FIND(col, value)` returns the 1-based row of the first exact match, or `0` if there isn't one; `.SORT(col)` returns a new Matrix sorted ascending by that column, auto-detecting whether to compare numerically or as text (numeric only if *every* cell in that column parses as a number — a column with even one `"N/A"` in it sorts as text instead):
+Two more round out the set: `.FIND(col, value)` returns the 1-based row of the first exact match, or `0` if there isn't one; `.SORT(col)` returns a new Matrix sorted ascending by that column, auto-detecting whether to compare numerically or as text (numeric only if *every* cell in that column parses as a number — a column with even one `"N/A"` in it sorts as text instead). As with a List, a `1` on the end sorts the other way: `.SORT(col, 1)`.
 
 ```kumu
 VAR scores = (
@@ -2702,9 +2720,9 @@ Output:
 2
 Name | Score
 ---- | -----
-Ann  | 72
-Cy   | 88
-Ben  | 95
+Ann  | 72   
+Cy   | 88   
+Ben  | 95   
 ```
 
 
@@ -2761,7 +2779,346 @@ return a new Matrix rather than changing the one you have.
 
 ---
 
-## Chapter 15: Comments
+## Chapter 15: Working with Dates
+
+**By the end of this chapter you'll be able to:**
+
+- write a date so that sorting and comparing it do the right thing
+- find today's date, and count days forwards and backwards
+- check that something really is a date before trusting it
+
+### The problem
+
+Suppose you're keeping a to-do list, and every item needs a due date. Before you
+can write a single line of code you have to decide how a date gets written down.
+`23/9/2026`? `Sept 23`? `9-23-26`?
+
+Pick one and try sorting a few:
+
+```kumu
+PRINT ["23/9/2026", "5/1/2026", "14/12/2026"].SORT()
+```
+
+Output:
+```
+["14/12/2026", "23/9/2026", "5/1/2026"]
+```
+
+December first, January last. Sorting text compares character by character, and
+the first character of each is the *day*, so the day is what got sorted. The
+result is in no useful order at all.
+
+Kumu's answer isn't a new kind of value. It's a rule about how you write one
+down. **A date is an ordinary String written `YYYY-MM-DD`** — a four-digit year,
+then the month, then the day, each padded with a zero if it needs one:
+`2026-09-23`.
+
+Put the biggest unit first and the problem disappears:
+
+```kumu
+PRINT ["2026-09-23", "2026-01-05", "2026-12-14"].SORT()
+```
+
+Output:
+```
+["2026-01-05", "2026-09-23", "2026-12-14"]
+```
+
+That's the whole trick, and it's worth understanding rather than memorising:
+sorting dates as *text* now puts them in *time* order, because the characters
+happen to line up with the calendar.
+
+### Comparing dates
+
+The same rule means the comparison operators from Chapter 3 already work:
+
+```kumu
+VAR dueDate = "2026-09-23"
+VAR deadline = "2026-10-01"
+
+IF dueDate < deadline {
+    PRINT "There's still time."
+}
+```
+
+Output:
+```
+There's still time.
+```
+
+Nothing clever is going on. `<` is comparing two ordinary strings, exactly the
+way it would compare `"apple"` and `"banana"`. It gives the right answer purely
+because of how the dates are written.
+
+### Today
+
+`TODAY()` gives today's date, already in the right shape. `NOW()` adds the time.
+Neither takes any arguments.
+
+```kumu
+PRINT TODAY()
+PRINT NOW()
+```
+
+Output (yours will show the day you run it):
+```
+2026-09-24
+2026-09-24 20:42:11
+```
+
+Like `RANDOM` in Chapter 11, these make a program's output different every time,
+so a program that prints them can't be checked against a fixed expected answer.
+
+### Counting days
+
+`DATE_DIFF(from, to)` counts whole days from the first date to the second:
+
+```kumu
+PRINT DATE_DIFF("2026-09-23", "2026-09-30")
+PRINT DATE_DIFF("2026-09-30", "2026-09-23")
+```
+
+Output:
+```
+7
+-7
+```
+
+The order of the two dates matters, and the sign is the useful part: a negative
+answer means the second date is the earlier one. That turns "is this overdue?"
+into a single comparison:
+
+```kumu
+VAR due = "2026-01-01"
+IF DATE_DIFF(TODAY(), due) < 0 {
+    PRINT "Overdue."
+}
+```
+
+`DATE_ADD(date, days)` moves a date forwards, or backwards if you give it a
+negative number:
+
+```kumu
+PRINT DATE_ADD("2026-09-23", 7)
+PRINT DATE_ADD("2026-09-23", -1)
+PRINT DATE_ADD("2026-12-31", 1)
+```
+
+Output:
+```
+2026-09-30
+2026-09-22
+2027-01-01
+```
+
+The last one rolled into a new year without being asked to. Both functions know
+how long each month is, and which years are leap years:
+
+```kumu
+PRINT DATE_ADD("2024-02-28", 1)
+PRINT DATE_ADD("2026-02-28", 1)
+```
+
+Output:
+```
+2024-02-29
+2026-03-01
+```
+
+Same sum, different answers, because 2024 is a leap year and 2026 isn't. This is
+the part you'd least enjoy working out by hand, and you never have to.
+
+### Taking a date apart
+
+```kumu
+PRINT WEEKDAY("2026-09-23")
+PRINT YEAR("2026-09-23")
+PRINT MONTH("2026-09-23")
+PRINT DAY("2026-09-23")
+```
+
+Output:
+```
+Wednesday
+2026
+9
+23
+```
+
+`WEEKDAY` gives a String; `YEAR`, `MONTH` and `DAY` give Numbers, so you can do
+arithmetic with them:
+
+```kumu
+VAR birthday = "1990-11-23"
+PRINT "Born in " + YEAR(birthday) + ", on a " + WEEKDAY(birthday) + "."
+```
+
+Output:
+```
+Born in 1990, on a Friday.
+```
+
+### Checking before you trust
+
+Every function in this chapter is strict. Hand one something that isn't a real
+date and it stops rather than guessing:
+
+<!-- check
+PRINT DATE_ADD("2026-02-30", 1)
+-->
+```
+Runtime Error: DATE_ADD date: '2026-02-30' is not a valid date -- dates are written as YYYY-MM-DD (e.g. 2026-09-23) (line 1)
+```
+
+That's deliberate. There is no February the 30th, and there's no sensible guess
+to make — is it March the 2nd, or February the 28th, or a typo for the 3rd? A
+program that quietly picked one would give you a wrong answer weeks later with
+nothing to trace it back to.
+
+`IS_DATE` is how you check first. It's the same pattern as `IS_NUMBER` in
+Chapter 5: ask, then act.
+
+```kumu
+PRINT IS_DATE("2026-02-28")
+PRINT IS_DATE("2024-02-29")
+PRINT IS_DATE("2026-02-29")
+PRINT IS_DATE("2026-1-1")
+PRINT IS_DATE("tomorrow")
+```
+
+Output:
+```
+1
+1
+0
+0
+0
+```
+
+The middle two are worth a second look. `2024-02-29` is real because 2024 is a
+leap year; `2026-02-29` isn't, because 2026 is not. `IS_DATE` doesn't just check
+the shape of the text, it checks that the day actually exists.
+
+Put together with `INPUT`, that's the shape of every date a user types:
+
+```kumu
+PRINT "When is it due? (YYYY-MM-DD)"
+INPUT typed
+IF IS_DATE(typed) {
+    PRINT "That's " + DATE_DIFF(TODAY(), typed) + " day(s) away."
+} ELSE {
+    PRINT "That doesn't look like a date."
+}
+```
+
+### Sorting by date
+
+Because a date is just text in a well-chosen format, everything you already know
+from Chapters 13 and 14 works on dates with nothing added:
+
+```kumu
+VAR tasks = (
+    ("Task", "Due"),
+    ("write", "2026-10-01"),
+    ("call", "2026-09-25"),
+    ("ship", "2026-12-31")
+)
+PRINT "Soonest first:"
+PRINT tasks.SORT("Due")
+PRINT "Latest first:"
+PRINT tasks.SORT("Due", 1)
+```
+
+Output:
+```
+Soonest first:
+Task  | Due       
+----- | ----------
+call  | 2026-09-25
+write | 2026-10-01
+ship  | 2026-12-31
+Latest first:
+Task  | Due       
+----- | ----------
+ship  | 2026-12-31
+write | 2026-10-01
+call  | 2026-09-25
+```
+
+The `1` on the end is the same descending flag you met in Chapter 14. Nothing in
+either call knows it's looking at dates — it's sorting text, and the format is
+what makes that the right thing to do.
+
+### Common mistakes
+
+**Writing the date some other way.** `09/23/2026` is not a Kumu date, and no
+function here will accept it. If your data arrives in another format you have to
+rearrange it yourself — `SPLIT` from Chapter 8 is usually how.
+
+**Dropping the padding zero.** `2026-9-1` looks like a date to a person but is
+rejected, because the whole scheme depends on every date being exactly ten
+characters. `2026-09-01` is the same day, written correctly.
+
+**Getting `DATE_DIFF`'s arguments the wrong way round.** `DATE_DIFF(from, to)`
+counts *from* the first *to* the second. If your overdue check is reporting
+everything backwards, this is almost always why.
+
+**Expecting dates to be their own type.** They aren't, and that's the design.
+`LEN("2026-09-23")` is `10`, `SUBSTRING` works on it, and a date read from a CSV
+arrives as ordinary text needing no conversion at all.
+
+**Comparing a date with a number.** `"2026-09-23" < 2026` is a runtime error:
+`<` needs both sides to be the same type (Chapter 3). Use `YEAR()` to get a
+number out first.
+
+**Forgetting that a blank isn't a date.** An empty cell is `""`, which
+`IS_DATE` rejects and which sorts *before* every real date. In a list of items
+where the due date is optional, the undated ones come first ascending and last
+descending.
+
+### Exercises
+
+Answers are in [Appendix A](#appendix-a-answers-to-exercises).
+
+**1. (Predict)** What does this print, and what does the sign tell you?
+
+```kumu
+PRINT DATE_DIFF("2026-03-01", "2026-02-28")
+```
+
+**2. (Predict)** What does `PRINT IS_DATE("2026-4-15")` print? There is nothing
+wrong with that day — so why?
+
+**3. (Fix)** This is meant to report how many days are left, but it stops with
+an error. What's wrong?
+
+```kumu
+VAR deadline = "2026/12/25"
+PRINT DATE_DIFF(TODAY(), deadline)
+```
+
+**4. (Write)** Ask the user for a date, and print what day of the week it falls
+on — or a polite message if what they typed isn't a date.
+
+**5. (Write)** Given `VAR dates = ["2026-12-14", "2026-01-05", "2026-09-23"]`,
+print the earliest one without writing a loop.
+
+**6. (Write)** Print the date a fortnight from today, and the day of the week it
+lands on.
+
+### Recap
+
+A Kumu date is a String written `YYYY-MM-DD`, and that format is doing real
+work: it makes sorting text the same as sorting time, and makes `<` and `>`
+compare dates correctly. `TODAY()` and `NOW()` tell you when it is. `DATE_DIFF`
+counts days between two dates and `DATE_ADD` moves one along, both handling month
+lengths and leap years for you. `WEEKDAY`, `YEAR`, `MONTH` and `DAY` take a date
+apart. And because every one of them is strict about what it accepts, `IS_DATE`
+is how you check anything that came from a user or a file before you rely on it.
+
+---
+
+## Chapter 16: Comments
 
 **By the end of this chapter you'll be able to:**
 
@@ -2831,7 +3188,7 @@ explain why, not what.
 
 ---
 
-## Chapter 16: Putting It Together — A Guessing Game
+## Chapter 17: Putting It Together — A Guessing Game
 
 **By the end of this chapter you'll be able to:**
 
@@ -2916,11 +3273,12 @@ another to walk into someone else's and work out what it's doing.
 
 ## Where to Go From Here
 
-This book covers every keyword and built-in function Kumu has, but two larger, complete programs are worth reading in full once you're comfortable with the basics:
+This book covers every keyword and built-in function Kumu has, but a few larger, complete programs are worth reading in full once you're comfortable with the basics:
 
 - **`test.kumu`** exercises every language feature in one file — a good file to skim when you want a reminder of exact syntax.
 - **`collections.kumu`** is a guided tour of the two collection types working together: a gradebook Matrix for storage, Lists for the arithmetic, `FOR EACH` as the bridge between them, and a CSV round trip at the end. Read it after Chapters 13 and 14.
 - **`address.kumu`** is the primary, flagship example of what Kumu programs look like in practice: a real, persistent, menu-driven address book with a two-level menu (Manage Contacts / Tools, both using `ELSEIF` for a flat, readable dispatch), a clean `CLEAR_SCREEN`-refreshed screen with `SLEEP`-paced pauses so results stay readable, an exported text report alongside its CSV persistence, and a `.COLS()` sanity check on the data it loads. It has a "sort contacts alphabetically" tool built on `.SORT`, recovers gracefully from running out of input at any menu depth, and is the largest example in this book of everything working together at once. One piece worth studying: its contact search is case-insensitive, and hand-rolls the lookup to get that. `.FIND` can now do it directly with its optional third argument — `book.FIND("Name", typed, 1)` — so rewriting that helper is a good first exercise in reading someone else's code and simplifying it.
+- **`todo.kumu`** is the largest program in the project, and the one that uses this chapter's dates in anger: a to-do list with optional due dates and tags, priorities, completion that archives an item in place rather than deleting it, and views that work out what's overdue or due this week every time you look. Two decisions in it are worth the read. Items are addressed by a stable `Id` rather than by row number, because sorting rewrites the row order and "complete number 3" would otherwise mean different things before and after a sort. And priority is stored as `1`, `2`, `3` rather than `"high"`, `"med"`, `"low"`, so that `.SORT` sees a numeric column — sorting the words would give you `high, low, med`, which is alphabetical and useless. Read it after this chapter.
 
 A few exercises to try on your own:
 1. Write a function `isPalindrome(s)` that returns `1` if a string reads the same backward as forward. Try it twice: once with `LEN` and `SUBSTRING`, and once with `SPLIT(s, "")`, `.REVERSE()` and `.JOIN("")` — comparing the two is a good way to feel what lists are for.
@@ -2928,6 +3286,8 @@ A few exercises to try on your own:
 3. Add a numeric "Age" column to a copy of the address book's starter data, and a Tools option that reports the average age with `.AVERAGE`.
 4. Rewrite `address.kumu`'s `indexOfContact()` to use `.FIND(column, value, 1)` instead of its hand-rolled loop, and check the behaviour is unchanged.
 5. Write a word-frequency counter: `SPLIT` a sentence on spaces, then for each word report how many times it appears using `.CONTAINS` and `.INDEX_OF`.
+6. Write `daysUntilBirthday(birthday)`: given a date in any year, work out how many days until the next one. `MONTH` and `DAY` will get you the parts; the year needs a decision about what happens when the day has already gone past this year.
+7. Add a "due this week" view to `todo.kumu` that groups items by `WEEKDAY` rather than listing them flat.
 
 For the complete, precise behavior of every keyword and function — including edge cases this book doesn't dwell on — see the [Manual]({{ site.baseurl }}/manual/).
 
@@ -3786,7 +4146,68 @@ Output:
 4
 ```
 
-### Chapter 15: Comments
+### Chapter 15: Working with Dates
+
+**1.** `-1`. `DATE_DIFF` counts from the first date to the second, and the
+second one here is a day *earlier*, so the count comes back negative. The sign
+is the whole point: a negative result is how you recognise a date that has
+already passed.
+
+**2.** `0`. There is nothing wrong with the 15th of April — the problem is how
+it's written. Every part of a Kumu date is a fixed width, so the month needs its
+padding zero: `2026-04-15` is accepted.
+
+**3.** The separators are slashes instead of dashes, so it isn't a Kumu date at
+all:
+
+<!-- check
+VAR deadline = "2026/12/25"
+PRINT DATE_DIFF("2026-09-24", deadline)
+-->
+```
+Runtime Error: DATE_DIFF to: '2026/12/25' is not a valid date -- dates are written as YYYY-MM-DD (e.g. 2026-09-23) (line 2)
+```
+
+Writing it `"2026-12-25"` fixes it. Notice the message names which of the two
+arguments was the bad one.
+
+**4.** Ask first, then act — the same shape as `IS_NUMBER` in Chapter 5:
+
+```kumu
+PRINT "Type a date (YYYY-MM-DD):"
+INPUT typed
+IF IS_DATE(typed) {
+    PRINT typed + " is a " + WEEKDAY(typed) + "."
+} ELSE {
+    PRINT "That isn't a date I can read."
+}
+```
+
+**5.** Sorting puts the earliest first, and you can index the result straight
+away:
+
+```kumu
+VAR dates = ["2026-12-14", "2026-01-05", "2026-09-23"]
+PRINT dates.SORT()[1]
+```
+
+Output:
+```
+2026-01-05
+```
+
+`.MIN()` would *not* work here: it's for numbers, and these are strings. Sorting
+is the right tool precisely because the format makes text order match time
+order.
+
+**6.** A fortnight is fourteen days:
+
+```kumu
+VAR fortnight = DATE_ADD(TODAY(), 14)
+PRINT "A fortnight from today is " + fortnight + ", a " + WEEKDAY(fortnight) + "."
+```
+
+### Chapter 16: Comments
 
 **1.** `# hello`.
 

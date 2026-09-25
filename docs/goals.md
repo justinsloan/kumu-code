@@ -135,6 +135,6 @@ Being honest about the limits is part of being useful:
 ## Start here
 
 Ready to try it? The **[Textbook]({{ site.baseurl }}/textbook/)** starts from
-`PRINT "Hello, World"` and ends with a working guessing game, sixteen chapters later.
+`PRINT "Hello, World"` and ends with a working guessing game, seventeen chapters later.
 Every example in it has been run through the interpreter — the output you see printed is
 real, not guessed.

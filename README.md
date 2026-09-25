@@ -1,7 +1,7 @@
 # Kumu
 
 A small, BASIC-inspired programming language built for teaching — with a hand-written
-interpreter in C++17, a reference manual, and a 16-chapter textbook.
+interpreter in C++17, a reference manual, and a 17-chapter textbook.
 
 Kumu keeps the friendly parts of BASIC (`PRINT`, `IF`, `FOR`, uppercase keywords) and
 drops the parts that make it hard to learn from. There are no line numbers and no `GOTO`.
@@ -133,7 +133,7 @@ Two design choices worth knowing before you read any code here:
 Both documents are published, rendered and searchable, at
 **<https://justinsloan.github.io/kumu-code/>**. Their sources live in [`docs/`](docs/).
 
-- **[Textbook](https://justinsloan.github.io/kumu-code/textbook/)** — a 16-chapter,
+- **[Textbook](https://justinsloan.github.io/kumu-code/textbook/)** — a 17-chapter,
   example-driven course, written to be worked through in order by someone learning alone.
   Each chapter opens with the *problem* a feature solves before showing any syntax, then
   covers common mistakes and three kinds of exercise (*predict*, *fix*, *write*). Every

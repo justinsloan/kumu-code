@@ -8,7 +8,7 @@ permalink: /
 # Kumu
 
 A small, BASIC-inspired programming language built for teaching — with a hand-written
-interpreter in C++17, a reference manual, and a 16-chapter textbook.
+interpreter in C++17, a reference manual, and a 17-chapter textbook.
 {: .kumu-tagline }
 
 Kumu keeps the friendly parts of BASIC — `PRINT`, `IF`, `FOR`, keywords in capitals —
