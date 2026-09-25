@@ -27,6 +27,9 @@
 # as well as a full YYYY-MM-DD, which normalizeDue() turns into a real
 # date.
 #
+# Every screen that shows something worth reading waits for Enter before
+# moving on, rather than pausing on a timer -- see pauseForReading().
+#
 # One consequence of dates being ordinary text worth knowing before it
 # looks like a bug: an empty cell sorts before any date, so items with
 # no due date come first ascending and last descending. The sort menu
@@ -345,9 +348,22 @@ FUNCTION printItem(todo, row) {
 
 # --- Small input helpers -----------------------------------------------
 
-# Gives a result a moment on screen before the next CLEAR_SCREEN wipes it.
+# Holds the screen until the reader says they are done with it.
+#
+# This waits for Enter rather than sleeping. A timed pause cannot work
+# here: the next menu opens with CLEAR_SCREEN, so a table would appear
+# and then vanish a second later whether or not it had been read, and a
+# long list needs longer than a short one. Waiting for a keypress makes
+# the reader the one who decides.
+#
+# Running out of input raises an error here, exactly as it would at any
+# other INPUT. That is deliberate -- it reaches the main loop's CATCH
+# and becomes a clean save-and-exit, so piping a script into this
+# program still ends tidily instead of hanging or crashing.
 FUNCTION pauseForReading() {
-    SLEEP(1)
+    PRINT ""
+    PRINT "Press Enter to continue..."
+    INPUT dismissed
 }
 
 # Asks a yes/no question; anything but Y or YES is a no, which is the
@@ -873,7 +889,20 @@ FUNCTION runToolsMenu() {
 # --- Main menu loop ----------------------------------------------------
 
 VAR running = 1
-pauseForReading()
+
+# This is the one pause outside the main loop, so it carries its own
+# TRY. It was safe unguarded while it slept; now that it waits for a
+# keypress it can fail like any other INPUT, and input that runs out
+# here means there was never any to begin with -- save what was loaded
+# and leave, rather than reporting an unhandled error over a program
+# that did nothing wrong.
+TRY {
+    pauseForReading()
+} CATCH err {
+    PRINT ""
+    PRINT "No input available - saving and exiting."
+    running = 0
+}
 
 WHILE running == 1 {
     TRY {
