@@ -1,13 +1,23 @@
 name: Release
 
-# Pushing a version tag (e.g. `git tag v0.2.0 && git push origin v0.2.0`)
-# builds kumu for Linux and Windows and publishes both as a GitHub Release.
+# Builds kumu for Linux and Windows and publishes both as a GitHub Release.
+# Either push a version tag (`git tag v0.2.0 && git push origin v0.2.0`), or
+# run this workflow from the Actions tab with a version, which tags the
+# commit it runs on.
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release, e.g. v0.2.0'
+        required: true
 
 permissions:
   contents: write
+
+env:
+  VERSION: ${{ inputs.version || github.ref_name }}
 
 jobs:
   release:
@@ -34,7 +44,7 @@ jobs:
 
       - name: Package
         run: |
-          name="kumu-${GITHUB_REF_NAME}"
+          name="kumu-${VERSION}"
           mkdir -p dist "$name-linux-x86_64" "$name-windows-x86_64"
           cp kumu README.md LICENSE collections.kumu "$name-linux-x86_64/"
           cp kumu.exe README.md LICENSE collections.kumu "$name-windows-x86_64/"
@@ -47,6 +57,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" dist/* \
-            --title "Kumu $GITHUB_REF_NAME" \
+          gh release create "$VERSION" dist/* \
+            --target "$GITHUB_SHA" \
+            --title "Kumu $VERSION" \
             --generate-notes
