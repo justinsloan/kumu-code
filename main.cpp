@@ -8,7 +8,26 @@
 #include "parser.hpp"
 #include "interpreter.hpp"
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 namespace {
+
+#ifdef _WIN32
+// The classic Windows console ignores ANSI escapes (CLEAR_SCREEN relies on
+// them) unless asked to honour them, and assumes a legacy code page rather
+// than UTF-8. Both are no-ops in Windows Terminal, which already does this.
+void setUpWindowsConsole() {
+    SetConsoleOutputCP(CP_UTF8);
+    SetConsoleCP(CP_UTF8);
+    HANDLE out = GetStdHandle(STD_OUTPUT_HANDLE);
+    DWORD mode = 0;
+    if (out != INVALID_HANDLE_VALUE && GetConsoleMode(out, &mode)) {
+        SetConsoleMode(out, mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
+    }
+}
+#endif
 
 // Prints a syntax error with the offending line underneath it and a caret at
 // the exact spot -- far more use to a reader than a line number alone, which
@@ -73,6 +92,10 @@ void reportSourceError(const kumu::SourceError& e, const std::string& source) {
 } // namespace
 
 int main(int argc, char* argv[]) {
+#ifdef _WIN32
+    setUpWindowsConsole();
+#endif
+
     if (argc < 2) {
         std::cerr << "Usage: " << argv[0] << " <filename.kumu>" << std::endl;
         return 1;

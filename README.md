@@ -56,6 +56,15 @@ make
 `make` produces a single `kumu` binary. `make clean` removes it along with the build
 artifacts.
 
+To build a Windows executable from Linux, install the MinGW-w64 cross-compiler
+(`g++-mingw-w64-x86-64-posix` on Debian/Ubuntu) and run `make windows`. This produces
+`kumu.exe`, a single statically linked file that runs on 64-bit Windows 10 or later
+without any extra DLLs:
+
+```bat
+kumu.exe myprogram.kumu
+```
+
 To run your own program, save it with a `.kumu` extension and pass it to the interpreter:
 
 ```sh

@@ -2,6 +2,7 @@
 *.o
 *.d
 kumu
+kumu.exe
 
 # Personal Claude Code settings (settings.json, if added, stays tracked)
 .claude/settings.local.json
