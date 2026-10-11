@@ -44,7 +44,13 @@ Grade:   B
 
 ## Quick start
 
-Requires `g++` with C++17 support and `make`. No external dependencies.
+Prebuilt binaries for Linux and Windows (x86-64) are on the
+[Releases page](https://github.com/justinsloan/kumu-code/releases). Download the archive
+for your system, unpack it, and run `./kumu collections.kumu` (`kumu.exe collections.kumu`
+on Windows).
+
+To build from source instead, you need `g++` with C++17 support and `make`. There are no
+external dependencies.
 
 ```sh
 git clone https://github.com/justinsloan/kumu-code.git

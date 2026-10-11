@@ -23,7 +23,7 @@ $(WIN_TARGET): $(SRCS) $(wildcard *.hpp)
 	$(WIN_CXX) -std=c++17 -Wall -Wextra -O2 -o $(WIN_TARGET) $(SRCS) $(WIN_LDFLAGS)
 
 $(TARGET): $(OBJS)
-	$(CXX) $(CXXFLAGS) -o $(TARGET) $(OBJS)
+	$(CXX) $(CXXFLAGS) -o $(TARGET) $(OBJS) $(LDFLAGS)
 
 %.o: %.cpp
 	$(CXX) $(CXXFLAGS) -c $< -o $@
