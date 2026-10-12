@@ -1,0 +1,63 @@
+name: Release
+
+# Builds kumu for Linux and Windows and publishes both as a GitHub Release.
+# Either push a version tag (`git tag v0.2.0 && git push origin v0.2.0`), or
+# run this workflow from the Actions tab with a version, which tags the
+# commit it runs on.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release, e.g. v0.2.0'
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  VERSION: ${{ inputs.version || github.ref_name }}
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install MinGW-w64
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y g++-mingw-w64-x86-64-posix
+
+      # Both binaries are statically linked, so the Linux one runs on any
+      # x86-64 distro regardless of its glibc version, and the Windows one
+      # needs no MinGW DLLs next to it.
+      - name: Build
+        run: |
+          make CXXFLAGS="-std=c++17 -Wall -Wextra -O2" LDFLAGS="-static -s"
+          make windows
+
+      - name: Smoke test
+        run: ./kumu collections.kumu
+
+      - name: Package
+        run: |
+          name="kumu-${VERSION}"
+          mkdir -p dist "$name-linux-x86_64" "$name-windows-x86_64"
+          cp kumu README.md LICENSE collections.kumu "$name-linux-x86_64/"
+          cp kumu.exe README.md LICENSE collections.kumu "$name-windows-x86_64/"
+          # tar keeps the executable bit, which a bare binary download loses.
+          tar -czf "dist/$name-linux-x86_64.tar.gz" "$name-linux-x86_64"
+          zip -r "dist/$name-windows-x86_64.zip" "$name-windows-x86_64"
+          (cd dist && sha256sum * > SHA256SUMS.txt)
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$VERSION" dist/* \
+            --target "$GITHUB_SHA" \
+            --title "Kumu $VERSION" \
+            --generate-notes

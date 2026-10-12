@@ -44,7 +44,13 @@ Grade:   B
 
 ## Quick start
 
-Requires `g++` with C++17 support and `make`. No external dependencies.
+Prebuilt binaries for Linux and Windows (x86-64) are on the
+[Releases page](https://github.com/justinsloan/kumu-code/releases). Download the archive
+for your system, unpack it, and run `./kumu collections.kumu` (`kumu.exe collections.kumu`
+on Windows).
+
+To build from source instead, you need `g++` with C++17 support and `make`. There are no
+external dependencies.
 
 ```sh
 git clone https://github.com/justinsloan/kumu-code.git
@@ -55,6 +61,15 @@ make
 
 `make` produces a single `kumu` binary. `make clean` removes it along with the build
 artifacts.
+
+To build a Windows executable from Linux, install the MinGW-w64 cross-compiler
+(`g++-mingw-w64-x86-64-posix` on Debian/Ubuntu) and run `make windows`. This produces
+`kumu.exe`, a single statically linked file that runs on 64-bit Windows 10 or later
+without any extra DLLs:
+
+```bat
+kumu.exe myprogram.kumu
+```
 
 To run your own program, save it with a `.kumu` extension and pass it to the interpreter:
 
